@@ -1,0 +1,282 @@
+
+andleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.1868632, -0.636543, 1.0171086)
+handleTap(_:) success: isOnTheTile col:0 row: 0 up:false normal:SIMD3<Float>(0.010111219, 0.9999413, 0.0039298823) pos: SIMD3<Float>(-1.2851399, -0.6502773, 1.028054)
+handleTap(_:) row exit 0
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.2851399, -0.6502773, 1.028054)
+handleTap(_:) success: isOnTheTile col:0 row: 0 up:true normal:SIMD3<Float>(0.012020088, 0.99992704, 0.0012547714) pos: SIMD3<Float>(-1.3832062, -0.6640142, 1.0390215)
+handleTap(_:) row exit 0
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.3832062, -0.6640142, 1.0390215)
+handleTap(_:) success: isOnTheTile col:0 row: 0 up:true normal:SIMD3<Float>(0.012020088, 0.99992704, 0.0012547714) pos: SIMD3<Float>(-1.4810623, -0.6777537, 1.0500109)
+handleTap(_:) row exit 0
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.4810623, -0.6777537, 1.0500109)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.4810623, -0.6777537, 1.0500109)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.4810623, -0.6777537, 1.0500109)
+handleTap(_:) success: isOnTheTile col:0 row: 1 up:false normal:SIMD3<Float>(0.0026481193, 0.9999446, 0.010187532) pos: SIMD3<Float>(-1.578872, -0.69149506, 1.0611786)
+handleTap(_:) row exit 1
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.578872, -0.69149506, 1.0611786)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.578872, -0.69149506, 1.0611786)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.578872, -0.69149506, 1.0611786)
+handleTap(_:) success: isOnTheTile col:0 row: 1 up:true normal:SIMD3<Float>(0.009549148, 0.9999543, 0.00051743136) pos: SIMD3<Float>(-1.6765146, -0.70523804, 1.0723553)
+handleTap(_:) row exit 1
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.6765146, -0.70523804, 1.0723553)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.6765146, -0.70523804, 1.0723553)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.6765146, -0.70523804, 1.0723553)
+handleTap(_:) success: isOnTheTile col:0 row: 1 up:true normal:SIMD3<Float>(0.009549148, 0.9999543, 0.00051743136) pos: SIMD3<Float>(-1.7739902, -0.71898264, 1.083541)
+handleTap(_:) row exit 1
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.7739902, -0.71898264, 1.083541)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.7739902, -0.71898264, 1.083541)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.7739902, -0.71898264, 1.083541)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-1.7739902, -0.71898264, 1.083541)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-1.7739902, -0.71898264, 1.083541)
+handleTap(_:) success: isOnTheTile col:0 row: 2 up:false normal:SIMD3<Float>(0.004685523, 0.99996096, -0.007488573) pos: SIMD3<Float>(-1.8713837, -0.7327286, 1.0945958)
+handleTap(_:) row exit 2
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.8713837, -0.7327286, 1.0945958)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.8713837, -0.7327286, 1.0945958)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.8713837, -0.7327286, 1.0945958)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-1.8713837, -0.7327286, 1.0945958)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-1.8713837, -0.7327286, 1.0945958)
+handleTap(_:) success: isOnTheTile col:0 row: 2 up:false normal:SIMD3<Float>(0.004685523, 0.99996096, -0.007488573) pos: SIMD3<Float>(-1.9686952, -0.74647593, 1.1055195)
+handleTap(_:) row exit 2
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.9686952, -0.74647593, 1.1055195)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.9686952, -0.74647593, 1.1055195)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.9686952, -0.74647593, 1.1055195)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-1.9686952, -0.74647593, 1.1055195)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-1.9686952, -0.74647593, 1.1055195)
+handleTap(_:) success: isOnTheTile col:0 row: 2 up:true normal:SIMD3<Float>(0.002557479, 0.9999865, -0.0045066257) pos: SIMD3<Float>(-2.0659618, -0.76022375, 1.1163644)
+handleTap(_:) row exit 2
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.0659618, -0.76022375, 1.1163644)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.0659618, -0.76022375, 1.1163644)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.0659618, -0.76022375, 1.1163644)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.0659618, -0.76022375, 1.1163644)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.0659618, -0.76022375, 1.1163644)
+handleTap(_:) success: isOnTheTile col:0 row: 2 up:true normal:SIMD3<Float>(0.002557479, 0.9999865, -0.0045066257) pos: SIMD3<Float>(-2.163184, -0.77397203, 1.1271303)
+handleTap(_:) row exit 2
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.163184, -0.77397203, 1.1271303)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.163184, -0.77397203, 1.1271303)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.163184, -0.77397203, 1.1271303)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.163184, -0.77397203, 1.1271303)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.163184, -0.77397203, 1.1271303)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.163184, -0.77397203, 1.1271303)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.163184, -0.77397203, 1.1271303)
+handleTap(_:) success: isOnTheTile col:0 row: 3 up:false normal:SIMD3<Float>(0.0024268534, 0.9999943, -0.002365319) pos: SIMD3<Float>(-2.2603636, -0.7877205, 1.1378548)
+handleTap(_:) row exit 3
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.2603636, -0.7877205, 1.1378548)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.2603636, -0.7877205, 1.1378548)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.2603636, -0.7877205, 1.1378548)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.2603636, -0.7877205, 1.1378548)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.2603636, -0.7877205, 1.1378548)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.2603636, -0.7877205, 1.1378548)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.2603636, -0.7877205, 1.1378548)
+handleTap(_:) success: isOnTheTile col:0 row: 3 up:true normal:SIMD3<Float>(-0.003334633, 0.9999781, 0.0057080835) pos: SIMD3<Float>(-2.3576014, -0.80146974, 1.1486793)
+handleTap(_:) row exit 3
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.3576014, -0.80146974, 1.1486793)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.3576014, -0.80146974, 1.1486793)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.3576014, -0.80146974, 1.1486793)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.3576014, -0.80146974, 1.1486793)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.3576014, -0.80146974, 1.1486793)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.3576014, -0.80146974, 1.1486793)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.3576014, -0.80146974, 1.1486793)
+handleTap(_:) success: isOnTheTile col:0 row: 3 up:true normal:SIMD3<Float>(-0.003334633, 0.9999781, 0.0057080835) pos: SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) row exit 3
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 3 pos:SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 4 pos:SIMD3<Float>(-2.4548976, -0.81521976, 1.1596036)
+handleTap(_:) success: isOnTheTile col:0 row: 4 up:false normal:SIMD3<Float>(-0.0032445572, 0.9999138, 0.012719229) pos: SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) row exit 4
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 3 pos:SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 4 pos:SIMD3<Float>(-2.5522506, -0.82897276, 1.1707505)
+handleTap(_:) success: isOnTheTile col:0 row: 4 up:true normal:SIMD3<Float>(-0.0018213127, 0.9999409, 0.010725095) pos: SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) row exit 4
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 3 pos:SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 4 pos:SIMD3<Float>(-2.6496356, -0.84272784, 1.182085)
+handleTap(_:) success: isOnTheTile col:0 row: 4 up:true normal:SIMD3<Float>(-0.0018213127, 0.9999409, 0.010725095) pos: SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) row exit 4
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 3 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 4 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 4 pos:SIMD3<Float>(-2.7470522, -0.856485, 1.1936073)
+handleTap(_:) golfBall stopped  stopped: false on: false
+🎯 가상객체감지 handleTap(_:): SIMD3<Float>(-1.2357488, -0.7355092, 0.8745121) ProjectedTile
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.2347759, -0.6355141, 0.87467587)
+handleTap(_:) success: isOnTheTile col:0 row: 0 up:false normal:SIMD3<Float>(0.010111219, 0.9999413, 0.0039298823) pos: SIMD3<Float>(-1.3307574, -0.64960366, 0.89830524)
+handleTap(_:) row exit 0
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.3307574, -0.64960366, 0.89830524)
+handleTap(_:) success: isOnTheTile col:0 row: 0 up:false normal:SIMD3<Float>(0.010111219, 0.9999413, 0.0039298823) pos: SIMD3<Float>(-1.426562, -0.6636953, 0.9220033)
+handleTap(_:) row exit 0
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.426562, -0.6636953, 0.9220033)
+handleTap(_:) success: isOnTheTile col:0 row: 0 up:true normal:SIMD3<Float>(0.012020088, 0.99992704, 0.0012547714) pos: SIMD3<Float>(-1.5221561, -0.67778945, 0.9457234)
+handleTap(_:) row exit 0
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.5221561, -0.67778945, 0.9457234)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.5221561, -0.67778945, 0.9457234)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.5221561, -0.67778945, 0.9457234)
+handleTap(_:) success: isOnTheTile col:0 row: 1 up:false normal:SIMD3<Float>(0.0026481193, 0.9999446, 0.010187532) pos: SIMD3<Float>(-1.617704, -0.6918856, 0.9696218)
+handleTap(_:) row exit 1
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.617704, -0.6918856, 0.9696218)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.617704, -0.6918856, 0.9696218)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.617704, -0.6918856, 0.9696218)
+handleTap(_:) success: isOnTheTile col:0 row: 1 up:false normal:SIMD3<Float>(0.0026481193, 0.9999446, 0.010187532) pos: SIMD3<Float>(-1.7132056, -0.70598364, 0.9936984)
+handleTap(_:) row exit 1
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.7132056, -0.70598364, 0.9936984)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.7132056, -0.70598364, 0.9936984)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.7132056, -0.70598364, 0.9936984)
+handleTap(_:) success: isOnTheTile col:0 row: 1 up:true normal:SIMD3<Float>(0.009549148, 0.9999543, 0.00051743136) pos: SIMD3<Float>(-1.80854, -0.7200833, 1.0177841)
+handleTap(_:) row exit 1
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.80854, -0.7200833, 1.0177841)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.80854, -0.7200833, 1.0177841)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.80854, -0.7200833, 1.0177841)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-1.80854, -0.7200833, 1.0177841)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-1.80854, -0.7200833, 1.0177841)
+handleTap(_:) success: isOnTheTile col:0 row: 2 up:false normal:SIMD3<Float>(0.004685523, 0.99996096, -0.007488573) pos: SIMD3<Float>(-1.9037924, -0.7341843, 1.0417387)
+handleTap(_:) row exit 2
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.9037924, -0.7341843, 1.0417387)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.9037924, -0.7341843, 1.0417387)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.9037924, -0.7341843, 1.0417387)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-1.9037924, -0.7341843, 1.0417387)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-1.9037924, -0.7341843, 1.0417387)
+handleTap(_:) success: isOnTheTile col:0 row: 2 up:false normal:SIMD3<Float>(0.004685523, 0.99996096, -0.007488573) pos: SIMD3<Float>(-1.9989629, -0.7482867, 1.0655624)
+handleTap(_:) row exit 2
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-1.9989629, -0.7482867, 1.0655624)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-1.9989629, -0.7482867, 1.0655624)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-1.9989629, -0.7482867, 1.0655624)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-1.9989629, -0.7482867, 1.0655624)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-1.9989629, -0.7482867, 1.0655624)
+handleTap(_:) success: isOnTheTile col:0 row: 2 up:true normal:SIMD3<Float>(0.002557479, 0.9999865, -0.0045066257) pos: SIMD3<Float>(-2.0940886, -0.7623896, 1.0893071)
+handleTap(_:) row exit 2
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.0940886, -0.7623896, 1.0893071)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.0940886, -0.7623896, 1.0893071)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.0940886, -0.7623896, 1.0893071)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.0940886, -0.7623896, 1.0893071)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.0940886, -0.7623896, 1.0893071)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.0940886, -0.7623896, 1.0893071)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.0940886, -0.7623896, 1.0893071)
+handleTap(_:) success: isOnTheTile col:0 row: 3 up:false normal:SIMD3<Float>(0.0024268534, 0.9999943, -0.002365319) pos: SIMD3<Float>(-2.1891718, -0.77649266, 1.1130104)
+handleTap(_:) row exit 3
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.1891718, -0.77649266, 1.1130104)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.1891718, -0.77649266, 1.1130104)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.1891718, -0.77649266, 1.1130104)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.1891718, -0.77649266, 1.1130104)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.1891718, -0.77649266, 1.1130104)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.1891718, -0.77649266, 1.1130104)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.1891718, -0.77649266, 1.1130104)
+handleTap(_:) success: isOnTheTile col:0 row: 3 up:false normal:SIMD3<Float>(0.0024268534, 0.9999943, -0.002365319) pos: SIMD3<Float>(-2.2842126, -0.79059595, 1.1366724)
+handleTap(_:) row exit 3
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.2842126, -0.79059595, 1.1366724)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.2842126, -0.79059595, 1.1366724)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.2842126, -0.79059595, 1.1366724)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.2842126, -0.79059595, 1.1366724)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.2842126, -0.79059595, 1.1366724)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.2842126, -0.79059595, 1.1366724)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.2842126, -0.79059595, 1.1366724)
+handleTap(_:) success: isOnTheTile col:0 row: 3 up:true normal:SIMD3<Float>(-0.003334633, 0.9999781, 0.0057080835) pos: SIMD3<Float>(-2.3793118, -0.80469996, 1.1604342)
+handleTap(_:) row exit 3
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.3793118, -0.80469996, 1.1604342)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.3793118, -0.80469996, 1.1604342)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.3793118, -0.80469996, 1.1604342)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.3793118, -0.80469996, 1.1604342)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.3793118, -0.80469996, 1.1604342)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.3793118, -0.80469996, 1.1604342)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.3793118, -0.80469996, 1.1604342)
+handleTap(_:) success: isOnTheTile col:0 row: 3 up:true normal:SIMD3<Float>(-0.003334633, 0.9999781, 0.0057080835) pos: SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) row exit 3
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 3 pos:SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 4 pos:SIMD3<Float>(-2.4744692, -0.81880474, 1.184296)
+handleTap(_:) success: isOnTheTile col:0 row: 4 up:false normal:SIMD3<Float>(-0.0032445572, 0.9999138, 0.012719229) pos: SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) row exit 4
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 3 pos:SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 4 pos:SIMD3<Float>(-2.5696833, -0.83291256, 1.2083803)
+handleTap(_:) success: isOnTheTile col:0 row: 4 up:true normal:SIMD3<Float>(-0.0018213127, 0.9999409, 0.010725095) pos: SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) row exit 4
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 3 pos:SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 4 pos:SIMD3<Float>(-2.6649294, -0.8470225, 1.2326523)
+handleTap(_:) success: isOnTheTile col:0 row: 4 up:true normal:SIMD3<Float>(-0.0018213127, 0.9999409, 0.010725095) pos: SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) row exit 4
+handleTap(_:) col exit 0
+handleTap(_:) start:  isOnTheTile  col: 0 row: 0 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 0 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 1 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 1 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 2 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 2 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 3 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 3 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) start:  isOnTheTile  col: 0 row: 4 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) fail: isOnTheTile outOfBounds col: 0 row: 4 pos:SIMD3<Float>(-2.7602074, -0.8611344, 1.2571119)
+handleTap(_:) golfBall stopped  stopped: false on: false
