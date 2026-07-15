@@ -25,6 +25,8 @@ class GolfBall: ObservableObject {
     private let muStatic: Float = 0.4
     private let muKinetic: Float = 0.2
     private let gravity = simd_float3(0, -9.8, 0)
+    /// 구름저항(rolling resistance) 감속 계수 — 그린 속도(스팀프값)에 해당하는 튜닝 파라미터.
+    var rollingResistance: Float = 0.35
 
     // 상태
     private var isRolling = false
@@ -75,14 +77,21 @@ class GolfBall: ObservableObject {
     func updateFromTorque(deltaTime dt: Float, surfaceNormal n: simd_float3) {
         let gravityParallel = gravity - simd_dot(gravity, n) * n
         let accelMag = simd_length(gravityParallel) * (5.0 / 7.0)
-        let accelDir = simd_normalize(gravityParallel)
-        let acceleration = accelDir * accelMag
-      
+        let acceleration: simd_float3
+        if accelMag > 0.0001 {
+            let accelDir = simd_normalize(gravityParallel)
+            acceleration = accelDir * accelMag
+        } else {
+            acceleration = .zero
+        }
+
         // 선속도 및 위치 업데이트
         velocity += acceleration * dt
+        applyRollingResistance(deltaTime: dt)
         position += velocity * dt
 
         guard simd_length(velocity) > 0.0001 else { return }
+        guard simd_length(gravityParallel) > 0.0001 else { return }
 
         // 토크 계산
         let normalForce = -simd_dot(gravity, n)
@@ -110,6 +119,28 @@ class GolfBall: ObservableObject {
         let angle = simd_length(angularVelocity) * dt
         let deltaRotation = simd_quatf(angle: angle, axis: rotationAxis)
         rotation = simd_normalize(deltaRotation * rotation)
+    }
+
+    /// 구름저항을 병진속도에 반영한다. `dt`가 음수(역방향 계산)면 자연히 반대로
+    /// 작용해 속도가 늘어난다 — 별도의 "역방향" 분기 없이 동일한 식으로 양방향을 다룬다.
+    private func applyRollingResistance(deltaTime dt: Float) {
+        let speed = simd_length(velocity)
+        guard speed > 0.0001 else {
+            velocity = .zero
+            return
+        }
+        let newSpeed = max(0, speed - rollingResistance * dt)
+        velocity = simd_normalize(velocity) * newSpeed
+    }
+
+    /// 주어진 법선벡터에서 최대 경사(내리막) 방향을 수평 평면에 투영해 얻는다.
+    /// 법선벡터는 (tx, 1, tz) 형태의 기울기 벡터로 해석되며, 수평 경사(tx, tz)를 추출한다.
+    /// 평평한 면(tx=tz=0)에서는 경사 방향이 없으므로 `.zero`를 반환한다.
+    static func steepestDescentDirection(surfaceNormal n: simd_float3) -> simd_float3 {
+        let horizontalSlope = simd_float3(n.x, 0, n.z)
+        let slopeLength = simd_length(horizontalSlope)
+        guard slopeLength > 0.0001 else { return .zero }
+        return simd_normalize(horizontalSlope)
     }
 }
 
