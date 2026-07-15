@@ -782,16 +782,26 @@ git commit -m "PuttRangeFinder 오케스트레이션(findSolutions) 추가"
 - Modify: `EasyPutt/ArViewModel.swift`
 
 **Interfaces:**
-- Consumes: `ArView.screenToWorldRay(_:) -> (origin: simd_float3, direction: simd_float3)?` (기존 extension, `ArViewModel.swift` 파일 하단), `ArViewModel.isCollectingTerrainSamples` (신규, 아래 Step 1).
-- Produces: `ArViewModel.terrainSamples: TerrainSampleStore` (신규), `ArViewModel.isCollectingTerrainSamples: Bool` (신규), `ArViewModel.startCollectingTerrainSamples()`, `ArViewModel.stopCollectingTerrainSamples()`, `ArViewModel.collectTerrainSamples()`.
+- Consumes: `ArView.screenToWorldRay(_:) -> (origin: simd_float3, direction: simd_float3)?` (기존 extension, `ArViewModel.swift` 파일 하단), `ArViewModel.isCollectingTerrainSamples` (신규, 아래 Step 1), `arView.cameraTransform.translation` (기존 ARKit API, 추가 raycast 비용 없이 카메라 위치를 바로 얻음).
+- Produces: `ArViewModel.terrainSamples: TerrainSampleStore` (신규), `ArViewModel.isCollectingTerrainSamples: Bool` (신규), `ArViewModel.terrainSampleGridResolution: Int` (신규, 기본값 3 — N×N 격자), `ArViewModel.terrainSampleGridSpan: ClosedRange<CGFloat>` (신규, 기본값 `0.2...0.8` — 화면 폭 기준 격자가 퍼지는 범위), `ArViewModel.terrainSampleMinSpacing: Float` (신규, 기본값 0.5 — 수집 지점 간 최소 거리, 미터), `ArViewModel.startCollectingTerrainSamples()`, `ArViewModel.stopCollectingTerrainSamples()`, `ArViewModel.collectTerrainSamples()`.
 
-- [ ] **Step 1: ArViewModel에 샘플 저장소와 수집 상태 추가**
+- [ ] **Step 1: ArViewModel에 샘플 저장소, 수집 상태, 튜닝 파라미터 추가**
 
 `EasyPutt/ArViewModel.swift`의 프로퍼티 선언부(예: `@Published var tileGrid : TileGrid?` 근처)에 추가:
 
 ```swift
     let terrainSamples = TerrainSampleStore()
     var isCollectingTerrainSamples: Bool = false
+    /// 화면을 N x N 격자로 나눠 raycast한다 (N = 이 값). 촘촘하게 하려면 늘린다.
+    var terrainSampleGridResolution: Int = 3
+    /// 격자 지점들이 화면 폭 기준 어느 범위에 퍼져 있는지 (0=왼쪽 끝, 1=오른쪽 끝).
+    /// 넓히면(예: 0.05...0.95) 더 넓은 실제 폭을 커버한다.
+    var terrainSampleGridSpan: ClosedRange<CGFloat> = 0.2...0.8
+    /// 새 격자 수집을 실행하려면 카메라가 "지금까지의 모든 수집 지점"으로부터
+    /// 최소 이만큼(미터) 떨어져 있어야 한다 — 제자리 정체나 경로가 교차할 때
+    /// 중복 수집을 막는다.
+    var terrainSampleMinSpacing: Float = 0.5
+    private var terrainSampleCollectionCenters: [simd_float3] = []
 ```
 
 - [ ] **Step 2: 수집 시작/종료 메서드 추가**
@@ -801,6 +811,7 @@ git commit -m "PuttRangeFinder 오케스트레이션(findSolutions) 추가"
 ```swift
     func startCollectingTerrainSamples() {
         terrainSamples.removeAll()
+        terrainSampleCollectionCenters.removeAll()
         isCollectingTerrainSamples = true
     }
 
@@ -809,20 +820,34 @@ git commit -m "PuttRangeFinder 오케스트레이션(findSolutions) 추가"
     }
 ```
 
-- [ ] **Step 3: 다중 지점 raycast로 샘플 수집하는 메서드 추가**
+- [ ] **Step 3: 거리 게이트 + 다중 지점 raycast로 샘플 수집하는 메서드 추가**
 
 `ArViewModel` 클래스 안, `stopCollectingTerrainSamples()` 아래에 추가:
 
 ```swift
-    /// 화면을 3x3 격자로 나눠 각 지점에서 raycast해 (좌표, 법선벡터) 샘플을 모은다.
-    /// `sceneReconstruction`처럼 상시 전체 환경을 재구성하지 않고, 수집 중일 때만
-    /// 필요한 만큼만 가볍게 여러 지점을 훑는다.
+    /// 카메라가 지금까지의 모든 수집 지점으로부터 `terrainSampleMinSpacing` 이상
+    /// 떨어져 있을 때만, 화면을 N x N 격자로 나눠 각 지점에서 raycast해
+    /// (좌표, 법선벡터) 샘플을 모은다. `sceneReconstruction`처럼 상시 전체
+    /// 환경을 재구성하지 않고, 필요한 순간에만 가볍게 여러 지점을 훑는다.
     func collectTerrainSamples() {
         guard isCollectingTerrainSamples, let arView = self.arView else { return }
-        let bounds = arView.bounds
-        guard bounds.width > 0, bounds.height > 0 else { return }
 
-        let fractions: [CGFloat] = [0.2, 0.5, 0.8]
+        let cameraPosition = arView.cameraTransform.translation
+        let tooClose = terrainSampleCollectionCenters.contains {
+            simd_distance($0, cameraPosition) < terrainSampleMinSpacing
+        }
+        guard !tooClose else { return }
+        terrainSampleCollectionCenters.append(cameraPosition)
+
+        let bounds = arView.bounds
+        guard bounds.width > 0, bounds.height > 0, terrainSampleGridResolution > 0 else { return }
+
+        let fractions: [CGFloat] = (0..<terrainSampleGridResolution).map { index in
+            guard terrainSampleGridResolution > 1 else { return (terrainSampleGridSpan.lowerBound + terrainSampleGridSpan.upperBound) / 2 }
+            let t = CGFloat(index) / CGFloat(terrainSampleGridResolution - 1)
+            return terrainSampleGridSpan.lowerBound + t * (terrainSampleGridSpan.upperBound - terrainSampleGridSpan.lowerBound)
+        }
+
         for xFraction in fractions {
             for yFraction in fractions {
                 let screenPoint = CGPoint(x: bounds.width * xFraction, y: bounds.height * yFraction)
@@ -842,6 +867,8 @@ git commit -m "PuttRangeFinder 오케스트레이션(findSolutions) 추가"
         }
     }
 ```
+
+(예: `terrainSampleGridResolution = 3`, `terrainSampleGridSpan = 0.2...0.8`이면 fractions는 `[0.2, 0.5, 0.8]`이 되어 이전과 동일하게 동작한다 — 기본값은 하위 호환.)
 
 - [ ] **Step 4: 기존 raycast 루프에서 매 틱마다 수집 호출**
 
