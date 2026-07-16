@@ -109,6 +109,26 @@ final class PuttRangeFinder {
         return nil
     }
 
+    /// 여러 홀컵 통과속도를 스윕하며 백워드 후보를 만들고, 각 후보를 검증해서
+    /// 캡처 반경 이내로 수렴하는 (direction, speed) 조합들을 모두 반환한다.
+    /// 성공하는 방향들이 하나의 연속 구간이 아니라 여러 구간으로 나올 수 있으므로,
+    /// 병합하지 않고 있는 그대로 반환한다.
+    func findSolutions(ballPosition: simd_float3, holePosition: simd_float3) -> [PuttSolution] {
+        var solutions: [PuttSolution] = []
+        for crossingSpeed in config.holeCrossingSpeeds {
+            guard let candidate = backwardCandidate(
+                holePosition: holePosition,
+                ballPosition: ballPosition,
+                holeCrossingSpeed: crossingSpeed
+            ) else { continue }
+
+            if let verified = verify(candidate, ballPosition: ballPosition, holePosition: holePosition) {
+                solutions.append(verified)
+            }
+        }
+        return solutions
+    }
+
     private struct ForwardSimulationResult {
         let closestPosition: simd_float3
         let closestDistance: Float
