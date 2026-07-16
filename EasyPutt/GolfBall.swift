@@ -86,9 +86,19 @@ class GolfBall: ObservableObject {
         }
 
         // 선속도 및 위치 업데이트
-        velocity += acceleration * dt
-        applyRollingResistance(deltaTime: dt)
-        position += velocity * dt
+        // 역방향(dt<0) 적분이 정방향 스텝의 정확한 역연산이 되려면, 위치 갱신에
+        // "되돌리기 전(진입 시점)" 속도를 써야 하고, 속도 서브스텝 순서도 뒤집어야
+        // 한다 — 정방향은 (가속→마찰→위치) 순, 역방향은 그 정확한 역순인
+        // (위치→마찰 되돌리기→가속 되돌리기) 순이어야 한다.
+        if dt >= 0 {
+            velocity += acceleration * dt
+            applyRollingResistance(deltaTime: dt)
+            position += velocity * dt
+        } else {
+            position += velocity * dt   // 되돌리기 전(진입 시점) 속도로 위치 갱신
+            applyRollingResistance(deltaTime: dt)
+            velocity += acceleration * dt
+        }
 
         guard simd_length(velocity) > 0.0001 else { return }
         guard simd_length(gravityParallel) > 0.0001 else { return }
