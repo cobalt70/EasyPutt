@@ -56,6 +56,21 @@ struct ContentView2: View {
                 Spacer()
             }
 
+            if let distance = arViewModel.ballToHoleDistance {
+                VStack {
+                    Text("거리: \(distance, specifier: "%.2f")m")
+                    Text("유효 방향: \(arViewModel.rangeFinderSolutions.count)개")
+                    ForEach(Array(arViewModel.rangeFinderSolutions.enumerated()), id: \.offset) { _, solution in
+                        Text("speed \(solution.speed, specifier: "%.2f") / dir (\(solution.direction.x, specifier: "%.2f"), \(solution.direction.z, specifier: "%.2f"))")
+                            .font(.caption2)
+                    }
+                }
+                .padding(8)
+                .background(.ultraThinMaterial)
+                .cornerRadius(8)
+                .padding(.top, 60)
+            }
+
             // 타일 상태 표시 (하단)
             if let tileGrid = arViewModel.tileGrid {
                 VStack {
@@ -77,6 +92,14 @@ struct ContentView2: View {
         }
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 8) {
+                ActionButton(title: "Ball", color: .green) {
+                    arViewModel.captureBallSubject.send()
+                }
+
+                ActionButton(title: "Hole", color: .red) {
+                    arViewModel.captureHoleSubject.send()
+                }
+
                 ActionButton(title: "Start", color: .green, disabled: btnViewModel.startCompleted && btnViewModel.endCompleted) {
                     guard let arView = arViewModel.arView else { return }
                     btnViewModel.startCompleted = true

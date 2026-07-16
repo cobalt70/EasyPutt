@@ -37,6 +37,14 @@ class ARViewModel : ObservableObject{
     var terrainSampleMinSpacing: Float = 0.5
     private var terrainSampleCollectionCenters: [simd_float3] = []
 
+    var ballPosition: simd_float3?
+    var holePosition: simd_float3?
+    @Published var rangeFinderSolutions: [PuttSolution] = []
+    @Published var ballToHoleDistance: Float?
+
+    let captureBallSubject = PassthroughSubject<Void, Never>()
+    let captureHoleSubject = PassthroughSubject<Void, Never>()
+
     var tileGridOn: Bool = false
     var isRaycasting: Bool = false
     @Published var isScanning: Bool = false
@@ -377,6 +385,20 @@ class ARViewModel : ObservableObject{
                 terrainSamples.add(position: position, normal: normal)
             }
         }
+    }
+
+    func runRangeFinder() {
+        guard let ball = ballPosition, let hole = holePosition else {
+            print("runRangeFinder: ball 또는 hole 위치가 없음")
+            return
+        }
+        ballToHoleDistance = simd_distance(
+            simd_float3(ball.x, 0, ball.z),
+            simd_float3(hole.x, 0, hole.z)
+        )
+        let finder = PuttRangeFinder(terrain: terrainSamples)
+        rangeFinderSolutions = finder.findSolutions(ballPosition: ball, holePosition: hole)
+        print("runRangeFinder: \(rangeFinderSolutions.count)개 solution 발견")
     }
     //arview.session.raycast : 현실세계 감지 arview.makeRaycastQuery 먼저 하고..
     //a arView.raycast(from: center, allowing: .estimatedPlane, alignment: .any).first

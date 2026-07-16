@@ -280,14 +280,44 @@ struct ARViewContainer: UIViewRepresentable {
                 
                 print("🎯 가상객체없음\(#function)")
             }
-            
-            
-            
-         
-            
+
+
+
+
+
            }
-        
-        
+
+        func captureBallPosition() {
+            guard let hit = parent.arViewModel.arRaycastResult else {
+                print("captureBallPosition: raycast 결과 없음")
+                return
+            }
+            let transform = hit.worldTransform
+            parent.arViewModel.ballPosition = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+            parent.arViewModel.startCollectingTerrainSamples()
+        }
+
+        func captureHolePosition() {
+            guard let hit = parent.arViewModel.arRaycastResult else {
+                print("captureHolePosition: raycast 결과 없음")
+                return
+            }
+            let transform = hit.worldTransform
+            parent.arViewModel.holePosition = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+            parent.arViewModel.stopCollectingTerrainSamples()
+            parent.arViewModel.runRangeFinder()
+        }
+
+        func subscribeToCaptureTriggers() {
+            parent.arViewModel.captureBallSubject
+                .sink { [weak self] in self?.captureBallPosition() }
+                .store(in: &cancellables)
+            parent.arViewModel.captureHoleSubject
+                .sink { [weak self] in self?.captureHolePosition() }
+                .store(in: &cancellables)
+        }
+
+
     }
     
     func makeCoordinator() -> Coordinator {
@@ -300,8 +330,9 @@ struct ARViewContainer: UIViewRepresentable {
         context.coordinator.arView = arViewModel.arView
         arViewModel.arView?.session.delegate = context.coordinator
         arViewModel.arView?.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleTap)))
-      
-        
+        context.coordinator.subscribeToCaptureTriggers()
+
+
         let coachingOverlay = ARCoachingOverlayView()
         coachingOverlay.activatesAutomatically = true
         coachingOverlay.goal = .tracking
