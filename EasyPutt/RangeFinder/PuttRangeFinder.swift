@@ -9,6 +9,10 @@ import simd
 struct PuttSolution {
     let direction: simd_float3 // 수평 단위벡터
     let speed: Float
+    /// verify()가 성공했을 때의 정방향 시뮬레이션 경로(5스텝마다 다운샘플링, 마지막
+    /// 기록은 항상 공이 멈춘 지점). 시각화 용도이며, backwardCandidate()가 만드는
+    /// 근사 후보나 verify()의 중간 보정 후보에는 채워지지 않는다(빈 배열).
+    var path: [simd_float3] = []
 }
 
 struct PuttRangeFinderConfig {
@@ -109,7 +113,7 @@ final class PuttRangeFinder {
                 return nil
             }
             if result.closestDistance <= config.captureRadius {
-                return candidate
+                return PuttSolution(direction: candidate.direction, speed: candidate.speed, path: result.path)
             }
             candidate = correct(candidate, ballPosition: ballPosition, holePosition: holePosition, result: result)
         }
@@ -139,6 +143,7 @@ final class PuttRangeFinder {
     private struct ForwardSimulationResult {
         let closestPosition: simd_float3
         let closestDistance: Float
+        let path: [simd_float3]
     }
 
     private func simulateForward(_ candidate: PuttSolution, from ballPosition: simd_float3, holePosition: simd_float3) -> ForwardSimulationResult? {
@@ -147,8 +152,9 @@ final class PuttRangeFinder {
 
         var closestPosition = ballPosition
         var closestDistance = horizontalDistance(ballPosition, holePosition)
+        var path: [simd_float3] = [ballPosition]
 
-        for _ in 0..<config.maxForwardSteps {
+        for step in 0..<config.maxForwardSteps {
             guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
             ball.updateFromTorque(deltaTime: config.deltaTime, surfaceNormal: normal)
 
@@ -157,9 +163,15 @@ final class PuttRangeFinder {
                 closestDistance = distance
                 closestPosition = ball.position
             }
-            if ball.hasStopped { break }
+            if step % 5 == 0 {
+                path.append(ball.position)
+            }
+            if ball.hasStopped {
+                path.append(ball.position)
+                break
+            }
         }
-        return ForwardSimulationResult(closestPosition: closestPosition, closestDistance: closestDistance)
+        return ForwardSimulationResult(closestPosition: closestPosition, closestDistance: closestDistance, path: path)
     }
 
     private func correct(_ candidate: PuttSolution, ballPosition: simd_float3, holePosition: simd_float3, result: ForwardSimulationResult) -> PuttSolution {

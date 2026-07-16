@@ -46,4 +46,42 @@ final class PuttRangeFinderVerifyTests: XCTestCase {
 
         XCTAssertNil(verified)
     }
+
+    func testVerifySuccessfulCandidateIncludesPathThatReachesTheHole() {
+        let terrain = makeGentleSlopeTerrain()
+        let finder = PuttRangeFinder(terrain: terrain)
+        let hole = simd_float3(1.5, 0, 0)
+        let ball = simd_float3(-1.0, 0, 0)
+
+        let wrongCandidate = PuttSolution(direction: simd_normalize(simd_float3(1.0, 0, 0.3)), speed: 0.5)
+        let verified = finder.verify(wrongCandidate, ballPosition: ball, holePosition: hole)
+
+        XCTAssertNotNil(verified)
+        guard let verified = verified else { return }
+        XCTAssertFalse(verified.path.isEmpty, "성공한 candidate는 시뮬레이션 경로를 담고 있어야 한다")
+
+        guard let firstPoint = verified.path.first else {
+            XCTFail("path가 비어있으면 안 된다")
+            return
+        }
+        XCTAssertEqual(firstPoint.x, ball.x, accuracy: 0.01, "경로의 첫 점은 공의 실제 위치여야 한다")
+        XCTAssertEqual(firstPoint.z, ball.z, accuracy: 0.01)
+
+        let closestApproach = verified.path.map { point in
+            simd_distance(simd_float3(point.x, 0, point.z), simd_float3(hole.x, 0, hole.z))
+        }.min() ?? .greatestFiniteMagnitude
+        XCTAssertLessThanOrEqual(
+            closestApproach,
+            PuttRangeFinderConfig.default.captureRadius + 0.005,
+            "경로 어딘가는 홀컵의 캡처 반경 안까지 접근해야 한다"
+        )
+    }
+
+    func testBackwardOnlyCandidateHasEmptyPath() {
+        // verify()를 거치지 않은 순수 PuttSolution(direction:speed:)은 path가 비어있어야
+        // 한다 — 기존 호출부(backwardCandidate, correct())가 컴파일과 동작 모두
+        // 그대로 유지되는지 확인한다.
+        let candidate = PuttSolution(direction: simd_float3(1, 0, 0), speed: 0.5)
+        XCTAssertTrue(candidate.path.isEmpty)
+    }
 }
