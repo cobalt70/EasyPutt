@@ -803,42 +803,6 @@ class TileGrid : ObservableObject {
     
     
     
-    func scanTile(col : Int ,row : Int){
-        guard let tile = getTile(col: col, row: row) , tile.projected != true , let arView = arView
-        else {
-            print("tile is not exist and tile is already")
-            return}
-        
-        
-        let points = [tile.bottomLeft, tile.bottomRight, tile.topRight, tile.topLeft]
-        self.projectedTiles.removeAll()
-        for point in points {
-            guard let point = point else { continue }
-            let query =  ARRaycastQuery(origin: point, direction: simd_float3(0, -1, 0), allowing: .estimatedPlane, alignment: .any)
-            print("query \(query)")
-            let results =  arView.session.raycast(query)
-            if let firstResult = results.first {
-                print("raycast success ")
-                let transform = firstResult.worldTransform
-                // 법선 벡터 (normal vector)는 변환 행렬의 세 번째 열을 사용합니다.
-                //                    let normalVector = simd_make_float3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z)
-                //중복이지만 일단 Go
-                //잔디 높이라던가 노이즈발생위험있어서 전체적으로 5cm 뛰움.
-                let projectedPoint = simd_make_float3(transform.columns.3.x, transform.columns.3.y + 0.05, transform.columns.3.z)
-                
-                tile.projectedPoints.append(projectedPoint)
-            } else {
-                print("projection error!")
-            }
-            
-        }
-        if tile.projectedPoints.count == 4 {
-            tile.projected = true
-        } else {
-            tile.projected = false
-        }
-    }
-    
     func makePadding() {
         
         guard let totalCols = self.totalCols, let totalRows = self.totalRows else {

@@ -42,35 +42,8 @@ class GolfBall: ObservableObject {
         self.velocity = simd_float3(initialVelocity.x , 0 , initialVelocity.z)
         self.rotation = simd_quatf(angle: 0, axis: [0, 1, 0])
     }
-    // 순수 구름 가정한 업데이트
     var hasStopped: Bool {
         simd_length(velocity) < 0.001 &&  simd_length(angularVelocity) < 0.01
-    }
-    func update(deltaTime dt: Float, surfaceNormal n: simd_float3) {
-        // 중력 분해
-        let gravityParallel = gravity - simd_dot(gravity, n) * n
-        let accelMag = (5.0 / 7.0) * simd_length(gravityParallel)
-        let accelDir = simd_normalize(gravityParallel)
-        let acceleration = accelDir * accelMag
-
-        // 선속도 및 위치 업데이트
-        velocity += acceleration * dt
-        position += velocity * dt
-
-        // 회전축 계산
-        guard simd_length(velocity) > 0.0001 else { return }
-        let rotationAxis = simd_normalize(simd_cross(n, velocity))
-
-        // 각속도 벡터 = v / r
-        let speed = simd_length(velocity)
-        let angularSpeed = speed / radius
-        angularVelocity = rotationAxis * angularSpeed
-        isRolling = true
-
-        // 회전 적용
-        let angle = angularSpeed * dt
-        let deltaRotation = simd_quatf(angle: angle, axis: rotationAxis)
-        rotation = simd_normalize(deltaRotation * rotation)
     }
 
     // 토크 기반 시뮬레이션 (미끄러짐 → 구름으로 전환)
