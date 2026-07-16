@@ -316,7 +316,7 @@ git commit -m "TerrainSampleStore 추가 (좌표+법선벡터 최근접 탐색)"
 
 **Interfaces:**
 - Consumes: `TerrainSampleStore.nearestNormal(to:)` (Task 2), `GolfBall(initialPosition:initialVelocity:)` / `GolfBall.updateFromTorque(deltaTime:surfaceNormal:)` / `GolfBall.steepestDescentDirection(surfaceNormal:)` / `GolfBall.rollingResistance` (Task 1).
-- Produces: `struct PuttSolution { let direction: simd_float3; let speed: Float }`, `struct PuttRangeFinderConfig { var rollingResistance: Float; var deltaTime: Float; var maxBackwardSteps: Int; var maxForwardSteps: Int; var captureRadius: Float; var holeCrossingSpeeds: [Float]; var maxCorrectionIterations: Int; var directionGain: Float; var speedGain: Float }` (기본값 포함, `static let default`), `final class PuttRangeFinder { init(terrain: TerrainSampleStore, config: PuttRangeFinderConfig = .default); func backwardCandidate(holePosition: simd_float3, ballPosition: simd_float3, holeCrossingSpeed: Float) -> PuttSolution? }` — 이후 Task 4/5에서 같은 클래스에 메서드를 더 추가한다.
+- Produces: `struct PuttSolution { let direction: simd_float3; let speed: Float }`, `struct PuttRangeFinderConfig { var rollingResistance: Float; var deltaTime: Float; var maxBackwardSteps: Int; var maxForwardSteps: Int; var captureRadius: Float; var holeCrossingSpeeds: [Float]; var maxCorrectionIterations: Int; var directionGain: Float; var speedGain: Float; var naturalDirectionAlignmentThreshold: Float }` (기본값 포함, `static let default`), `final class PuttRangeFinder { init(terrain: TerrainSampleStore, config: PuttRangeFinderConfig = .default); func backwardCandidate(holePosition: simd_float3, ballPosition: simd_float3, holeCrossingSpeed: Float) -> PuttSolution? }` — 이후 Task 4/5에서 같은 클래스에 메서드를 더 추가한다.
 
 - [ ] **Step 1: 실패 테스트 작성**
 
@@ -383,6 +383,48 @@ final class PuttRangeFinderBackwardTests: XCTestCase {
         )
         XCTAssertNil(candidate)
     }
+
+    func testBackwardCandidateOnFlatGroundFallsBackToStraightLine() {
+        let store = TerrainSampleStore()
+        let flatNormal = simd_float3(0, 1, 0)
+        var x: Float = -3.0
+        while x <= 3.0 {
+            var z: Float = -3.0
+            while z <= 3.0 {
+                store.add(position: simd_float3(x, 0, z), normal: flatNormal)
+                z += 0.2
+            }
+            x += 0.2
+        }
+        let finder = PuttRangeFinder(terrain: store)
+        let hole = simd_float3(1.5, 0, 0)
+        let ball = simd_float3(-1.0, 0, 0)
+
+        let candidate = finder.backwardCandidate(holePosition: hole, ballPosition: ball, holeCrossingSpeed: 0.08)
+
+        // 평지에는 자연스러운 낙하 방향이 없으므로, 공→홀컵 직선 방향을 폴백으로 쓴다.
+        XCTAssertNotNil(candidate)
+        guard let candidate = candidate else { return }
+        XCTAssertEqual(candidate.direction.x, 1.0, accuracy: 0.01)
+        XCTAssertEqual(candidate.direction.z, 0.0, accuracy: 0.01)
+    }
+
+    func testBackwardCandidateOnUphillPuttFallsBackToStraightLine() {
+        // makeGentleSlopeTerrain()의 내리막은 항상 +x 방향이다. 홀컵을 공보다
+        // -x쪽(더 높은 쪽)에 두면, 홀컵에서의 최대 경사(+x)는 공 반대쪽을 향하게 된다 —
+        // 오르막 퍼팅. 이 경우 최대 경사 대신 공→홀컵 직선을 써야 한다.
+        let terrain = makeGentleSlopeTerrain()
+        let finder = PuttRangeFinder(terrain: terrain)
+        let hole = simd_float3(-1.5, 0, 0)
+        let ball = simd_float3(1.0, 0, 0)
+
+        let candidate = finder.backwardCandidate(holePosition: hole, ballPosition: ball, holeCrossingSpeed: 0.08)
+
+        XCTAssertNotNil(candidate)
+        guard let candidate = candidate else { return }
+        // 공에서 홀컵으로 가려면 -x 방향(오르막)으로 쳐야 한다.
+        XCTAssertLessThan(candidate.direction.x, -0.9)
+    }
 }
 ```
 
@@ -424,6 +466,11 @@ struct PuttRangeFinderConfig {
     var directionGain: Float = 0.5
     /// 정밀검증 보정 반복에서 못미치거나 지나친 정도(m)에 대한 속도 보정 계수((m/s)/m).
     var speedGain: Float = 0.3
+    /// 홀컵에서의 최대 경사(steepestDescentDirection)가 공→홀컵 직선과 이루는 각의 코사인
+    /// 임계값. 이 값보다 정렬이 나쁘면(기본값 0.5 = 60도보다 더 벌어지면 — 예: 오르막
+    /// 퍼팅처럼 최대 경사 방향이 공 반대쪽을 향하는 경우) 최대 경사 대신 공→홀컵 직선
+    /// 자체를 백워드 시작 방향으로 쓴다.
+    var naturalDirectionAlignmentThreshold: Float = 0.5
 
     static let `default` = PuttRangeFinderConfig()
 }
@@ -440,22 +487,30 @@ final class PuttRangeFinder {
     /// 홀컵에서 공 쪽으로 거슬러 올라가며 초기 후보 (방향, 속도)를 구한다.
     /// 공-홀컵 직선에 수직이고 공 위치를 지나는 선을 넘으면(또는 지형 데이터가
     /// 없거나 속도가 0 이하가 되면) 종료하고, 그 시점의 상태를 후보로 반환한다.
+    /// 시작 방향은 원칙적으로 홀컵에서의 최대 경사(steepestDescentDirection)를 쓰지만,
+    /// 그 방향이 공→홀컵 직선과 `naturalDirectionAlignmentThreshold`보다 더 벌어지면
+    /// (평지이거나, 오르막 퍼팅처럼 최대 경사가 공 반대쪽을 향하는 경우) 공→홀컵 직선
+    /// 자체로 대체한다 — "뒤쪽"(공에서 60도 넘게 벗어난 방향)에서 후보를 찾지 않는다.
     /// 이 결과는 근사치이며 최종 정답이 아니다 — `verify(_:ballPosition:holePosition:)`로 보정해야 한다.
     func backwardCandidate(holePosition: simd_float3, ballPosition: simd_float3, holeCrossingSpeed: Float) -> PuttSolution? {
         guard holeCrossingSpeed > 0 else { return nil }
         guard let holeNormal = terrain.nearestNormal(to: holePosition) else { return nil }
-
-        let initialDirection = GolfBall.steepestDescentDirection(surfaceNormal: holeNormal)
-        guard simd_length(initialDirection) > 0.0001 else { return nil }
-
-        let ball = GolfBall(initialPosition: holePosition, initialVelocity: initialDirection * holeCrossingSpeed)
-        ball.rollingResistance = config.rollingResistance
 
         let toBall = ballPosition - holePosition
         let toBallHorizontal = simd_float3(toBall.x, 0, toBall.z)
         let ballAxisDistance = simd_length(toBallHorizontal)
         guard ballAxisDistance > 0.0001 else { return nil }
         let toBallUnit = toBallHorizontal / ballAxisDistance
+        // 홀컵→공 반대 방향, 즉 "공에서 홀컵을 향해 친다"는 직선 방향.
+        let straightLineDirection = -toBallUnit
+
+        var initialDirection = GolfBall.steepestDescentDirection(surfaceNormal: holeNormal)
+        if simd_dot(initialDirection, straightLineDirection) < config.naturalDirectionAlignmentThreshold {
+            initialDirection = straightLineDirection
+        }
+
+        let ball = GolfBall(initialPosition: holePosition, initialVelocity: initialDirection * holeCrossingSpeed)
+        ball.rollingResistance = config.rollingResistance
 
         for _ in 0..<config.maxBackwardSteps {
             guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
@@ -482,7 +537,7 @@ final class PuttRangeFinder {
 
 Run: `xcodebuild test -project EasyPutt.xcodeproj -scheme EasyPutt -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:EasyPuttTests/PuttRangeFinderBackwardTests`
 
-Expected: PASS (3 tests). `testBackwardCandidateFindsPlausibleDirectionAndSpeed`가 실패하면(예: direction.x가 기대와 다르면) `GolfBall.steepestDescentDirection`의 부호나 `updateFromTorque`에 음수 `deltaTime`을 넣었을 때의 동작을 다시 점검한다.
+Expected: PASS (5 tests). `testBackwardCandidateFindsPlausibleDirectionAndSpeed`가 실패하면(예: direction.x가 기대와 다르면) `GolfBall.steepestDescentDirection`의 부호나 `updateFromTorque`에 음수 `deltaTime`을 넣었을 때의 동작을 다시 점검한다. `testBackwardCandidateOnUphillPuttFallsBackToStraightLine`이 실패하면 `naturalDirectionAlignmentThreshold` 비교 부등호나 `straightLineDirection`의 부호를 다시 점검한다.
 
 - [ ] **Step 5: 커밋**
 
@@ -1047,7 +1102,7 @@ Expected: BUILD SUCCEEDED
 3. 카메라를 자연스럽게 홀컵 쪽으로 이동시킨다 (이 사이 `terrainSamples`가 채워짐).
 4. 홀컵 위치를 조준하고 **Hole** 버튼을 탭한다 — 이 시점에 `runRangeFinder()`가 자동 실행된다.
 5. 화면 하단에 거리(m)와 solution 개수/값이 표시되는지 확인한다.
-6. 완전히 평평한 바닥에서 테스트할 경우, `GolfBall.steepestDescentDirection`이 `.zero`를 반환해 `backwardCandidate`가 매번 nil을 반환할 수 있다 — 이 경우 solution 0개가 나오는 게 정상 동작이다 (평지에는 자연스러운 "낙하 방향"이 없다는 걸 설계 문서에서 이미 짚었음). 약간 경사진 바닥이나 실제 퍼팅 그린에서 재확인한다.
+6. 완전히 평평한 바닥이나 오르막 퍼팅(홀컵이 공보다 높은 경우)에서 테스트해도 solution이 0개가 아니어야 한다 — Task 3의 `naturalDirectionAlignmentThreshold` 폴백 덕분에 이런 경우엔 공→홀컵 직선 방향이 후보로 쓰인다. 만약 계속 0개만 나오면 raycast로 얻은 법선벡터 자체가 이상하지 않은지(예: 항상 `(0,1,0)`으로 고정되어 있지 않은지) 먼저 의심한다.
 
 - [ ] **Step 7: 커밋**
 
@@ -1065,4 +1120,5 @@ git commit -m "공/홀컵 탭 플로우와 range finder 결과 표시 UI 추가"
   1. 설계 문서는 데이터 수집을 `sceneDepth` 픽셀 이웃 샘플링으로 적었으나, 이 계획은 기존에 이미 검증된 `ARRaycastQuery`(`arView.screenToWorldRay` + `session.raycast`)를 화면 3x3 지점에 반복 호출하는 것으로 변경했다. `sceneReconstruction = .mesh`(전체 환경 상시 메쉬)도 검토했으나, 필요한 데이터양(몇 개의 법선벡터)에 비해 리소스 부담이 크다고 판단해 배제했다 (모두 대화에서 합의됨). "별도 스캔 없이 자연스럽게 샘플이 쌓인다"는 설계 의도는 그대로 유지된다.
   2. 초기 설계의 백워드 추적 "반경 R 이내 도달" 체크를 "공-홀컵 직선에 수직인, 공을 지나는 선을 넘으면 종료"로 단순화했고, "얼마나 가까우면 성공인지"는 Task 4의 `captureRadius` 하나로 통일했다.
   3. 회전/스핀 상태를 백워드 추적 중 별도로 추적하거나 경계조건에서 강제로 0으로 리셋하는 로직은 필요 없다 — 백워드/정방향 모두 매번 새 `GolfBall` 인스턴스를 만들어 `updateFromTorque`(부호만 다르게)를 호출하므로, `GolfBall.init`의 기본값(각속도 0)이 자연스럽게 그 역할을 한다.
+  4. (대화 중 추가 합의) 백워드 추적의 시작 방향으로 홀컵에서의 최대 경사(`steepestDescentDirection`)를 그대로 쓰면, 평지(경사가 없는 경우)나 오르막 퍼팅(최대 경사가 공 반대쪽을 향하는 경우)에서 후보가 전혀 나오지 않는 문제가 있었다. Task 3에 `naturalDirectionAlignmentThreshold`(기본 `cos(60°)`)를 추가해, 최대 경사 방향이 공→홀컵 직선과 60도 넘게 벌어지면(평지의 `.zero`도 이 조건에 자연히 포함됨) 공→홀컵 직선 자체를 시작 방향으로 쓰도록 폴백을 통일했다 — "홀컵 기준 뒤쪽" 방향에서는 후보를 찾지 않는다는 원칙.
 - **타입/시그니처 일관성**: `PuttSolution { direction, speed }`, `PuttRangeFinderConfig`, `PuttRangeFinder(terrain:config:)` 전 태스크에서 동일하게 사용됨을 확인. `TerrainSampleStore.nearestNormal(to:)`가 Task 2~6 전체에서 유일한 법선벡터 조회 경로임을 확인 (`Tile`/`TileGrid` 미사용).
