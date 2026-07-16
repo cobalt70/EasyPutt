@@ -36,6 +36,8 @@ class ARViewModel : ObservableObject{
     /// 중복 수집을 막는다.
     var terrainSampleMinSpacing: Float = 0.5
     private var terrainSampleCollectionCenters: [simd_float3] = []
+    private var centerRaycastMarkerEntity: ModelEntity?
+    private var centerRaycastMarkerAnchor: AnchorEntity?
 
     var ballPosition: simd_float3?
     var holePosition: simd_float3?
@@ -84,6 +86,7 @@ class ARViewModel : ObservableObject{
                 let center = arView.center
                 (self.arRaycastResult, self.vrRaycastResult) = self.performRaycast(at :center )
                 self.collectTerrainSamples()
+                self.updateCenterRaycastMarker()
 
 //                if let  raycastResult  = self.arRaycastResult , let camera = arView.session.currentFrame?.camera {
 //                    
@@ -385,6 +388,40 @@ class ARViewModel : ObservableObject{
                 terrainSamples.add(position: position, normal: normal)
             }
         }
+    }
+
+    /// 지형 스캔 중(isCollectingTerrainSamples)에만 화면 중앙 raycast 결과(arRaycastResult)
+    /// 위치에 작은 구체 마커를 표시한다. 9개 격자점 전부가 아니라 이 하나만 보여줘서
+    /// "지금 지면을 인식하고 있다"는 최소한의 시각 피드백을 준다. 매 틱 새로 만들지 않고
+    /// 엔티티 하나를 재사용해 위치만 갱신한다.
+    func updateCenterRaycastMarker() {
+        guard let arView = self.arView else { return }
+
+        guard isCollectingTerrainSamples, let hit = arRaycastResult else {
+            if let anchor = centerRaycastMarkerAnchor {
+                anchor.removeFromParent()
+                centerRaycastMarkerAnchor = nil
+                centerRaycastMarkerEntity = nil
+            }
+            return
+        }
+
+        let transform = hit.worldTransform
+        let position = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+
+        if centerRaycastMarkerEntity == nil {
+            let marker = ModelEntity(
+                mesh: .generateSphere(radius: 0.01),
+                materials: [SimpleMaterial(color: .cyan, isMetallic: false)]
+            )
+            let anchor = AnchorEntity(world: .zero)
+            anchor.name = "CenterRaycastMarkerAnchor"
+            anchor.addChild(marker)
+            arView.scene.addAnchor(anchor)
+            centerRaycastMarkerEntity = marker
+            centerRaycastMarkerAnchor = anchor
+        }
+        centerRaycastMarkerEntity?.position = position
     }
 
     func runRangeFinder() {
