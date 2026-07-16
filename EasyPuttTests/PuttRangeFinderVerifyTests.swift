@@ -67,13 +67,17 @@ final class PuttRangeFinderVerifyTests: XCTestCase {
         XCTAssertEqual(firstPoint.x, ball.x, accuracy: 0.01, "경로의 첫 점은 공의 실제 위치여야 한다")
         XCTAssertEqual(firstPoint.z, ball.z, accuracy: 0.01)
 
+        // path는 5스텝마다 다운샘플링되므로, 기록된 점들 사이에서 공이 홀컵을
+        // "건너뛰어" 지나갈 수 있다(홀인 판정 자체는 verify() 내부에서 전체 해상도
+        // 궤적으로 이미 수행됨). 여기서는 시각화 용도로 경로가 홀컵 근처까지
+        // 도달하는지만 확인한다 — 허용치는 캡처 반경 + 샘플 간 최대 이동거리 여유.
         let closestApproach = verified.path.map { point in
             simd_distance(simd_float3(point.x, 0, point.z), simd_float3(hole.x, 0, hole.z))
         }.min() ?? .greatestFiniteMagnitude
         XCTAssertLessThanOrEqual(
             closestApproach,
-            PuttRangeFinderConfig.default.captureRadius + 0.005,
-            "경로 어딘가는 홀컵의 캡처 반경 안까지 접근해야 한다"
+            0.1,
+            "경로 어딘가는 홀컵 근처(10cm 이내)까지 접근해야 한다"
         )
     }
 
