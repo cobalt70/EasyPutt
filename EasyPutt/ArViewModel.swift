@@ -399,7 +399,10 @@ class ARViewModel : ObservableObject{
 
         guard isCollectingTerrainSamples, let hit = arRaycastResult else {
             if let anchor = centerRaycastMarkerAnchor {
-                anchor.removeFromParent()
+                // 씬 루트 앵커는 parent가 없어 removeFromParent()가 no-op이다 —
+                // 반드시 scene.removeAnchor로 제거해야 한다 (ScanPlane.swift의
+                // removeAnchorWithName과 동일한 패턴).
+                arView.scene.removeAnchor(anchor)
                 centerRaycastMarkerAnchor = nil
                 centerRaycastMarkerEntity = nil
             }
