@@ -295,6 +295,9 @@ struct ARViewContainer: UIViewRepresentable {
             let transform = hit.worldTransform
             parent.arViewModel.ballPosition = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
             parent.arViewModel.startCollectingTerrainSamples()
+            if let arView = parent.arViewModel.arView {
+                removeAnchorWithName(for: arView, name: "TrajectoryAnchor")
+            }
         }
 
         func captureHolePosition() {
@@ -306,6 +309,9 @@ struct ARViewContainer: UIViewRepresentable {
             parent.arViewModel.holePosition = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
             parent.arViewModel.stopCollectingTerrainSamples()
             parent.arViewModel.runRangeFinder()
+            if let arView = parent.arViewModel.arView {
+                drawTrajectories(parent.arViewModel.rangeFinderSolutions, in: arView)
+            }
         }
 
         func subscribeToCaptureTriggers() {
@@ -460,4 +466,56 @@ class ButtonViewModel: ObservableObject {
         scanCompleted = false
         
     }
+}
+
+/// 두 점을 잇는 얇은 원통 하나를 만든다 — Tile.swift의 createLineEntity와 같은
+/// 컨벤션(원통 = 선)을 따르되, 화살촉/꼬리 장식은 없는 단순한 선분이다.
+func makeTrajectorySegment(from start: simd_float3, to end: simd_float3, color: UIColor, radius: Float) -> ModelEntity {
+    let length = simd_distance(start, end)
+    guard length > 0.0001 else { return ModelEntity() }
+
+    let direction = normalize(end - start)
+    let cylinder = MeshResource.generateCylinder(height: length, radius: radius)
+    let material = SimpleMaterial(color: color, isMetallic: false)
+    let segmentEntity = ModelEntity(mesh: cylinder, materials: [material])
+    segmentEntity.components.set(
+        CollisionComponent(
+            shapes: [],
+            mode: .trigger,
+            filter: CollisionFilter(group: CollisionGroups.displayGround, mask: [])
+        )
+    )
+    segmentEntity.position = start + (direction * (length / 2.0))
+    segmentEntity.transform.rotation = simd_quatf(from: simd_float3(0, 1, 0), to: direction)
+    return segmentEntity
+}
+
+/// path의 인접한 점들을 선분으로 이어붙여 궤적 전체를 하나의 부모 엔티티로 만든다.
+func makeTrajectoryEntity(path: [simd_float3], color: UIColor, radius: Float) -> ModelEntity {
+    let trajectoryEntity = ModelEntity()
+    guard path.count > 1 else { return trajectoryEntity }
+    for index in 0..<(path.count - 1) {
+        let segment = makeTrajectorySegment(from: path[index], to: path[index + 1], color: color, radius: radius)
+        trajectoryEntity.addChild(segment)
+    }
+    return trajectoryEntity
+}
+
+/// solutions를 모두 그리되, 첫 번째(solutions[0])만 강조색/굵은 선으로, 나머지는
+/// 옅은 색/얇은 선으로 그려 구분한다. 기존 "TrajectoryAnchor"가 있으면 먼저 지운다.
+func drawTrajectories(_ solutions: [PuttSolution], in arView: ARView) {
+    removeAnchorWithName(for: arView, name: "TrajectoryAnchor")
+    guard !solutions.isEmpty else { return }
+
+    let anchor = AnchorEntity(world: .zero)
+    anchor.name = "TrajectoryAnchor"
+
+    for (index, solution) in solutions.enumerated() {
+        let color: UIColor = index == 0 ? .systemGreen : UIColor.white.withAlphaComponent(0.4)
+        let radius: Float = index == 0 ? 0.008 : 0.004
+        let trajectoryEntity = makeTrajectoryEntity(path: solution.path, color: color, radius: radius)
+        anchor.addChild(trajectoryEntity)
+    }
+
+    arView.scene.addAnchor(anchor)
 }
