@@ -507,15 +507,21 @@ func drawTrajectories(_ solutions: [PuttSolution], in arView: ARView) {
     removeAnchorWithName(for: arView, name: "TrajectoryAnchor")
     guard !solutions.isEmpty else { return }
 
-    let anchor = AnchorEntity(world: .zero)
-    anchor.name = "TrajectoryAnchor"
+    // removeAnchorWithName은 제거를 DispatchQueue.main.async로 미루므로, 새 앵커를
+    // 여기서 동기로 추가하면 나중에 실행되는 제거 블록이 (같은 이름인) 새 앵커까지
+    // 지워버린다. 추가도 async로 미루면 main 큐의 FIFO 순서상 제거가 먼저, 추가가
+    // 나중에 실행되는 것이 보장된다.
+    DispatchQueue.main.async {
+        let anchor = AnchorEntity(world: .zero)
+        anchor.name = "TrajectoryAnchor"
 
-    for (index, solution) in solutions.enumerated() {
-        let color: UIColor = index == 0 ? .systemGreen : UIColor.white.withAlphaComponent(0.4)
-        let radius: Float = index == 0 ? 0.008 : 0.004
-        let trajectoryEntity = makeTrajectoryEntity(path: solution.path, color: color, radius: radius)
-        anchor.addChild(trajectoryEntity)
+        for (index, solution) in solutions.enumerated() {
+            let color: UIColor = index == 0 ? .systemGreen : UIColor.white.withAlphaComponent(0.4)
+            let radius: Float = index == 0 ? 0.008 : 0.004
+            let trajectoryEntity = makeTrajectoryEntity(path: solution.path, color: color, radius: radius)
+            anchor.addChild(trajectoryEntity)
+        }
+
+        arView.scene.addAnchor(anchor)
     }
-
-    arView.scene.addAnchor(anchor)
 }
