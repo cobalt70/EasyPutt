@@ -23,7 +23,20 @@ class ARViewModel : ObservableObject{
     @Published var virtualZ : Float?
     
     @Published var tileGrid : TileGrid?
-    
+
+    let terrainSamples = TerrainSampleStore()
+    var isCollectingTerrainSamples: Bool = false
+    /// 화면을 N x N 격자로 나눠 raycast한다 (N = 이 값). 촘촘하게 하려면 늘린다.
+    var terrainSampleGridResolution: Int = 3
+    /// 격자 지점들이 화면 폭 기준 어느 범위에 퍼져 있는지 (0=왼쪽 끝, 1=오른쪽 끝).
+    /// 넓히면(예: 0.05...0.95) 더 넓은 실제 폭을 커버한다.
+    var terrainSampleGridSpan: ClosedRange<CGFloat> = 0.2...0.8
+    /// 새 격자 수집을 실행하려면 카메라가 "지금까지의 모든 수집 지점"으로부터
+    /// 최소 이만큼(미터) 떨어져 있어야 한다 — 제자리 정체나 경로가 교차할 때
+    /// 중복 수집을 막는다.
+    var terrainSampleMinSpacing: Float = 0.5
+    private var terrainSampleCollectionCenters: [simd_float3] = []
+
     var tileGridOn: Bool = false
     var isRaycasting: Bool = false
     @Published var isScanning: Bool = false
@@ -62,7 +75,8 @@ class ARViewModel : ObservableObject{
                 guard let arView = self.arView else { return }
                 let center = arView.center
                 (self.arRaycastResult, self.vrRaycastResult) = self.performRaycast(at :center )
-     
+                self.collectTerrainSamples()
+
 //                if let  raycastResult  = self.arRaycastResult , let camera = arView.session.currentFrame?.camera {
 //                    
 //                    self.focusEntity?.state = .tracking(raycastResult: raycastResult , camera: camera)
@@ -311,6 +325,58 @@ class ARViewModel : ObservableObject{
     
     func requestRaycastUpdate() {
         updateSubject.send()
+    }
+
+    func startCollectingTerrainSamples() {
+        terrainSamples.removeAll()
+        terrainSampleCollectionCenters.removeAll()
+        isCollectingTerrainSamples = true
+    }
+
+    func stopCollectingTerrainSamples() {
+        isCollectingTerrainSamples = false
+    }
+
+    /// 카메라가 지금까지의 모든 수집 지점으로부터 `terrainSampleMinSpacing` 이상
+    /// 떨어져 있을 때만, 화면을 N x N 격자로 나눠 각 지점에서 raycast해
+    /// (좌표, 법선벡터) 샘플을 모은다. `sceneReconstruction`처럼 상시 전체
+    /// 환경을 재구성하지 않고, 필요한 순간에만 가볍게 여러 지점을 훑는다.
+    func collectTerrainSamples() {
+        guard isCollectingTerrainSamples, let arView = self.arView else { return }
+
+        let cameraPosition = arView.cameraTransform.translation
+        let tooClose = terrainSampleCollectionCenters.contains {
+            simd_distance($0, cameraPosition) < terrainSampleMinSpacing
+        }
+        guard !tooClose else { return }
+        terrainSampleCollectionCenters.append(cameraPosition)
+
+        let bounds = arView.bounds
+        guard bounds.width > 0, bounds.height > 0, terrainSampleGridResolution > 0 else { return }
+
+        let fractions: [CGFloat] = (0..<terrainSampleGridResolution).map { index in
+            guard terrainSampleGridResolution > 1 else { return (terrainSampleGridSpan.lowerBound + terrainSampleGridSpan.upperBound) / 2 }
+            let t = CGFloat(index) / CGFloat(terrainSampleGridResolution - 1)
+            return terrainSampleGridSpan.lowerBound + t * (terrainSampleGridSpan.upperBound - terrainSampleGridSpan.lowerBound)
+        }
+
+        for xFraction in fractions {
+            for yFraction in fractions {
+                let screenPoint = CGPoint(x: bounds.width * xFraction, y: bounds.height * yFraction)
+                guard let ray = arView.screenToWorldRay(screenPoint) else { continue }
+                let query = ARRaycastQuery(
+                    origin: ray.origin,
+                    direction: normalize(ray.direction),
+                    allowing: .estimatedPlane,
+                    alignment: .any
+                )
+                guard let hit = arView.session.raycast(query).first else { continue }
+                let transform = hit.worldTransform
+                let position = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+                let normal = simd_make_float3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z)
+                terrainSamples.add(position: position, normal: normal)
+            }
+        }
     }
     //arview.session.raycast : 현실세계 감지 arview.makeRaycastQuery 먼저 하고..
     //a arView.raycast(from: center, allowing: .estimatedPlane, alignment: .any).first
