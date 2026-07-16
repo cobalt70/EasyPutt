@@ -89,4 +89,81 @@ final class PuttRangeFinder {
         }
         return nil
     }
+
+    /// `candidate`를 실제 정방향 물리 엔진으로 재시뮬레이션하고, 홀컵과의
+    /// 최근접 거리(오차)를 이용해 (speed, direction)을 반복 보정한다.
+    /// 캡처 반경 이내로 수렴하면 그 candidate를 반환하고, `maxCorrectionIterations`
+    /// 내에 수렴하지 못하면 nil을 반환한다.
+    func verify(_ initialCandidate: PuttSolution, ballPosition: simd_float3, holePosition: simd_float3) -> PuttSolution? {
+        var candidate = initialCandidate
+
+        for _ in 0..<config.maxCorrectionIterations {
+            guard let result = simulateForward(candidate, from: ballPosition, holePosition: holePosition) else {
+                return nil
+            }
+            if result.closestDistance <= config.captureRadius {
+                return candidate
+            }
+            candidate = correct(candidate, ballPosition: ballPosition, holePosition: holePosition, result: result)
+        }
+        return nil
+    }
+
+    private struct ForwardSimulationResult {
+        let closestPosition: simd_float3
+        let closestDistance: Float
+    }
+
+    private func simulateForward(_ candidate: PuttSolution, from ballPosition: simd_float3, holePosition: simd_float3) -> ForwardSimulationResult? {
+        let ball = GolfBall(initialPosition: ballPosition, initialVelocity: candidate.direction * candidate.speed)
+        ball.rollingResistance = config.rollingResistance
+
+        var closestPosition = ballPosition
+        var closestDistance = horizontalDistance(ballPosition, holePosition)
+
+        for _ in 0..<config.maxForwardSteps {
+            guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
+            ball.updateFromTorque(deltaTime: config.deltaTime, surfaceNormal: normal)
+
+            let distance = horizontalDistance(ball.position, holePosition)
+            if distance < closestDistance {
+                closestDistance = distance
+                closestPosition = ball.position
+            }
+            if ball.hasStopped { break }
+        }
+        return ForwardSimulationResult(closestPosition: closestPosition, closestDistance: closestDistance)
+    }
+
+    private func correct(_ candidate: PuttSolution, ballPosition: simd_float3, holePosition: simd_float3, result: ForwardSimulationResult) -> PuttSolution {
+        let toHole = holePosition - ballPosition
+        let toHoleHorizontal = simd_float3(toHole.x, 0, toHole.z)
+        guard simd_length(toHoleHorizontal) > 0.0001 else { return candidate }
+        let toHoleUnit = simd_normalize(toHoleHorizontal)
+        let sideways = simd_float3(-toHoleUnit.z, 0, toHoleUnit.x)
+
+        let missVector = simd_float3(
+            result.closestPosition.x - holePosition.x, 0,
+            result.closestPosition.z - holePosition.z
+        )
+        let lateralMiss = simd_dot(missVector, sideways)
+        let alongMiss = simd_dot(missVector, toHoleUnit)
+
+        let angleCorrection = -lateralMiss * config.directionGain
+        let speedCorrection = -alongMiss * config.speedGain
+
+        let correctedDirection = simd_normalize(rotateHorizontal(candidate.direction, by: angleCorrection))
+        let correctedSpeed = max(0.05, candidate.speed + speedCorrection)
+        return PuttSolution(direction: correctedDirection, speed: correctedSpeed)
+    }
+
+    private func rotateHorizontal(_ v: simd_float3, by angle: Float) -> simd_float3 {
+        let c = cos(angle)
+        let s = sin(angle)
+        return simd_float3(v.x * c - v.z * s, v.y, v.x * s + v.z * c)
+    }
+
+    private func horizontalDistance(_ a: simd_float3, _ b: simd_float3) -> Float {
+        simd_distance(simd_float3(a.x, 0, a.z), simd_float3(b.x, 0, b.z))
+    }
 }
