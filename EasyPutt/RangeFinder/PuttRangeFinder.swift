@@ -27,9 +27,13 @@ struct PuttSolution {
 
 struct PuttRangeFinderConfig {
     var rollingResistance: Float = 0.35
-    var deltaTime: Float = 0.05
-    var maxBackwardSteps: Int = 4000
-    var maxForwardSteps: Int = 4000
+    /// 짧은 퍼트(1m 이내)는 스텝당 이동거리가 캡처 반경(3.3cm)보다 커질 수 있어
+    /// (예: 0.05초 스텝에서 속도 1m/s면 스텝당 5cm) directionRange의 좌우 경계 탐색이
+    /// "운 좋게 한 스텝만 홀에 걸리는" 이산화 오차로 왜곡될 수 있다 — deltaTime을
+    /// 작게 잡아 스텝 간격을 캡처 반경보다 충분히 촘촘하게 만든다.
+    var deltaTime: Float = 0.01
+    var maxBackwardSteps: Int = 1000
+    var maxForwardSteps: Int = 1000
     /// 홀인으로 판정하는 최대 허용 오차 — 홀컵 반경(≈5.4cm) - 공 반지름(2.135cm).
     var captureRadius: Float = 0.033
     /// 홀컵을 놓쳤을 때 이 정도만 지나쳐서 멈추는 세기(다잉 퍼팅)를 목표로 삼는다.
@@ -197,7 +201,10 @@ final class PuttRangeFinder {
         holePosition: simd_float3,
         crossingSpeed: Float,
         coarseAngleStep: Float = (Float.pi / 180) * 1.0,
-        maxCoarseSteps: Int = 89,
+        // 60도까지만 훑는다 — backwardCandidate가 이미 쓰는 naturalDirectionAlignmentThreshold
+        // (cos 60도)와 같은 한계다. 60도 근처는 전진 속도 성분이 작아(cos60°=0.5) maxBackwardSteps
+        // 예산 안에서도 충분히 먼 거리까지 커버되지만, 89도까지 가면 그 여유가 크게 줄어든다.
+        maxCoarseSteps: Int = 60,
         bisectionIterations: Int = 24
     ) -> PuttSolution? {
         guard crossingSpeed > 0 else { return nil }
