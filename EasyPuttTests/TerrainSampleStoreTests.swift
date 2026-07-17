@@ -43,34 +43,13 @@ final class TerrainSampleStoreTests: XCTestCase {
         XCTAssertTrue(store.isEmpty)
     }
 
-    func testReturnsNilWhenNearestSampleIsFarBeyondMaxDistance() {
+    func testReturnsNearestSampleEvenWhenFar() {
         let store = TerrainSampleStore()
         store.add(position: simd_float3(0, 0, 0), normal: simd_float3(0, 1, 0))
 
-        // Only sample is 10m away horizontally, far beyond the default maxDistance (0.5).
+        // Only sample is 10m away horizontally — still the best estimate available.
         let result = store.nearestNormal(to: simd_float3(10, 0, 0))
 
-        XCTAssertNil(result)
-        XCTAssertFalse(store.isEmpty)
-    }
-
-    func testReturnsNormalJustInsideMaxDistanceBoundary() {
-        let store = TerrainSampleStore()
-        store.add(position: simd_float3(0, 0, 0), normal: simd_float3(0, 1, 0))
-
-        // 0.49 < default maxDistance (0.5): should still return the normal.
-        let result = store.nearestNormal(to: simd_float3(0.49, 0, 0))
-
         XCTAssertEqual(result, simd_float3(0, 1, 0))
-    }
-
-    func testReturnsNilJustOutsideMaxDistanceBoundary() {
-        let store = TerrainSampleStore()
-        store.add(position: simd_float3(0, 0, 0), normal: simd_float3(0, 1, 0))
-
-        // 0.51 > default maxDistance (0.5): should return nil.
-        let result = store.nearestNormal(to: simd_float3(0.51, 0, 0))
-
-        XCTAssertNil(result)
     }
 }

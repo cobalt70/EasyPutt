@@ -22,8 +22,6 @@ struct ARViewContainer: UIViewRepresentable {
         var cancellables : Set<AnyCancellable> = []
         var updateSubscription: Cancellable?
 
-        var golfBall : GolfBall?
-        
         init(parent: ARViewContainer) {
             self.parent = parent
             self.arView = parent.arViewModel.arView
@@ -105,187 +103,6 @@ struct ARViewContainer: UIViewRepresentable {
         func coachingOverlayViewDidRequestSessionReset(_ coachingOverlayView: ARCoachingOverlayView) {
             print("세션 리셋 요청됨")
         }
-      
-        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
-            // 탭 이벤트 처리 로직
-            guard let arView = parent.arViewModel.arView else { return }
-           
-            // 탭한 위치에서 raycast를 진행하고, 가상 물체와 상호작용을 처리하는 코드 작성
-            let location = gesture.location(in: arView)
-            
-            guard let (origin, direction)  = arView.screenToWorldRay(location) else {return}
-            
-       //     removeEntitiesWithName(for: arView, name: "GolfBall")
-        
-            let virtualResults = arView.scene.raycast(
-                origin: origin,
-                direction: direction,
-                length: 20,
-                query: .all,                // 가장 가까운 충돌 객체 탐색
-                mask: CollisionGroups.projectedTile,  // 'projectedTile' 그룹과만 충돌
-                relativeTo: nil                 // 월드 좌표계 기준
-            )
-            let radius : Float = 0.02135
-            let mass  : Float  = 0.04593
-            let mesh = MeshResource.generateSphere(radius: radius)
-            let ballEntity = ModelEntity(mesh:mesh) // 반지름 5cm 공
-            ballEntity.name = "GolfBall"
-            let collisionShape = ShapeResource.generateConvex(from: mesh)
-            ballEntity.generateCollisionShapes(recursive:false) // 충돌 설정
-        
-            ballEntity.components.set(CollisionComponent(
-                shapes: [collisionShape],
-                mode:  .trigger,
-                filter: CollisionFilter(group: CollisionGroups.golfBall, mask: []))
-            )
-            ballEntity.components.set(
-                PhysicsBodyComponent(
-                    massProperties: .init(mass: Float(mass)), // 골프공 질량 약 45.93g
-                    material: PhysicsMaterialResource.generate(
-                        staticFriction: 0.1,  // 정지 마찰력 (낮음)
-                        dynamicFriction: 0.04, // 구를 때 마찰력
-                        restitution: 0.0 // 반발 계수 (높음, 공 튀는 정도)
-                    ),
-                    mode: .kinematic // 물리적으로 움직이는 객체
-                )
-            )
-            
-            parent.arViewModel.previousTile = nil
-            parent.arViewModel.currentTile = nil
-            parent.arViewModel.ballEntity = ballEntity
-            var virtualResult: CollisionCastHit? = nil
-            
-            for result in virtualResults{
-                
-                if result.entity.name !=  "ProjectedTile", let anchor = result.entity.anchor{
-                    print("virtual plane fail \(result.entity.name) \(result.position) \(anchor)")
-                    
-                    continue
-                } else {
-                    virtualResult = result
-                    if let anchor = result.entity.anchor   {
-                        print("virtual plane success \(result.entity.name) \(result.position) \(anchor)")
-                    // 추후에 엔티티 3각형 평면 안에 virtualResult가 포함되있는지 확인해봐야 할듯함.
-                    }
-                    
-                }
-                
-            }
-            if let virtualHit = virtualResult {
-                let virtualPosition = virtualHit.position
-                ballEntity.position = virtualPosition  + virtualHit.normal * 0.1// 공이 약간 위에 떠 있도록 조정
-           
-                
-                if let anchor = virtualHit.entity.anchor {
-                    anchor.addChild(ballEntity)
-                   // arView.scene.addAnchor(anchor)
-                } else {
-                    print("virtualHit.entity.anchor is nil")
-                    let anchor = AnchorEntity()
-                    anchor.addChild(ballEntity)
-                    arView.scene.addAnchor(anchor)
-                }
-                var directionFromBall = simd_float3(0,0,0)
-                
-                if let endPoint = parent.arViewModel.tileGrid?.endPoint , let startPoint = parent.arViewModel.tileGrid?.startPoint {
-                    
-                    directionFromBall = ( endPoint - ballEntity.position)
-                }
-                directionFromBall.y = 0
-                let unitDirectionFromBall = normalize(directionFromBall)
-                var initialVelocity = simd_float3(0,0,0)
-                if let sideUnitVector = parent.arViewModel.tileGrid?.rotate90DegreesAroundOrigin(unitDirectionFromBall) {
-                    
-                    initialVelocity = normalize((directionFromBall -  sideUnitVector * parent.arViewModel.direction )) * parent.arViewModel.speed
-                } else {
-                    initialVelocity = unitDirectionFromBall * parent.arViewModel.speed
-                }
-                
-                let golfBall = GolfBall(initialPosition: ballEntity.position , initialVelocity:  initialVelocity )
-                
-                self.golfBall = golfBall
-                
-                //                ballEntity.components.set(
-//                    PhysicsMotionComponent(linearVelocity: initialVelocity)
-//                )
-             
-                var lastUpdateTime: TimeInterval = 0.0
-                let updateInterval: TimeInterval = 0.1 // 원하는 주기 (초)
-                
-                updateSubscription = arView.scene.subscribe(to: SceneEvents.Update.self) { event in
-                    
-                       lastUpdateTime += event.deltaTime
-                       guard  lastUpdateTime >= updateInterval else { return }
-                       lastUpdateTime = 0.0
-                   
-                    guard let totalCols = self.parent.arViewModel.tileGrid?.totalCols , let totalRows = self.parent.arViewModel.tileGrid?.totalRows else { return }
-                    var shouldBreak : Bool = false
-                    var colTest : Int = 0
-                    var rowTest : Int = 0
-                    var isOnTheTile : Bool = false
-                    for col  in 0..<totalCols {
-                        colTest = col
-                        for row in 0..<totalRows {
-                            rowTest = row
-                            guard let tile = self.parent.arViewModel.tileGrid?.projectedTiles[col][row] else { continue }
-                            print("\(#function) start:  isOnTheTile  col: \(col) row: \(row) pos:\(golfBall.position)")
-                            
-                            switch  tile.isOnTheTile(situatedAt: golfBall.position) {
-                                
-                            case .failure(let error) :
-                                print("\(#function) fail: isOnTheTile \(error) col: \(col) row: \(row) pos:\(golfBall.position)")
-                                isOnTheTile = false
-                                continue
-                            case .success(let (matchedRow, matchedCol, isUpTriangle)):
-
-                                if  let groundNormal = isUpTriangle ? tile.projectedUpNormal : tile.projectedDnNormal {
-                                    golfBall.updateFromTorque(deltaTime: 0.1 , surfaceNormal: groundNormal)
-                                    
-                                    let transform = Transform(
-                                        scale: [1, 1, 1],
-                                        rotation: golfBall.rotation,
-                                        translation: golfBall.position
-                                    )
-                                    isOnTheTile = true
-                                    shouldBreak = true
-                                    print("\(#function) success: isOnTheTile col:\(matchedCol) row: \(matchedRow) up:\(isUpTriangle) normal:\(groundNormal) pos: \(golfBall.position)")
-                                    ballEntity.move(to: transform, relativeTo: nil, duration: 0.0)
-                                    
-                                    break
-                                 }
-                            }
-                            if shouldBreak {
-                                print("\(#function) row exit \(rowTest)")
-                                break
-                            }
-                        }
-                        if shouldBreak {
-                            print("\(#function) col exit \(colTest)")
-                            break
-                        }
-                    }
-                    
-                    print("exit for for isOnTheTile  col \(colTest) row \(rowTest) on: \(isOnTheTile) ")
-                    if golfBall.hasStopped || (rowTest == totalRows - 1  && colTest == totalCols - 1 && !isOnTheTile) {
-                        print("\(#function) golfBall stopped  stopped: \(golfBall.hasStopped) on: \(isOnTheTile)")
-                        self.updateSubscription?.cancel()
-                        
-                    }
-                    
-                }
-
-                print("🎯 가상객체감지 \(#function): \(virtualPosition) \(virtualHit.entity.name)")
-                
-            } else {
-                
-                print("🎯 가상객체없음\(#function)")
-            }
-
-
-
-
-
-           }
 
         func captureBallPosition() {
             guard let hit = parent.arViewModel.arRaycastResult else {
@@ -293,10 +110,12 @@ struct ARViewContainer: UIViewRepresentable {
                 return
             }
             let transform = hit.worldTransform
-            parent.arViewModel.ballPosition = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+            let position = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+            parent.arViewModel.ballPosition = position
             parent.arViewModel.startCollectingTerrainSamples()
             if let arView = parent.arViewModel.arView {
                 removeAnchorWithName(for: arView, name: "TrajectoryAnchor")
+                drawBallMarker(at: position, in: arView)
             }
         }
 
@@ -306,11 +125,18 @@ struct ARViewContainer: UIViewRepresentable {
                 return
             }
             let transform = hit.worldTransform
-            parent.arViewModel.holePosition = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+            let position = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+            parent.arViewModel.holePosition = position
             parent.arViewModel.stopCollectingTerrainSamples()
             parent.arViewModel.runRangeFinder()
             if let arView = parent.arViewModel.arView {
-                drawTrajectories(parent.arViewModel.rangeFinderSolutions, in: arView)
+                drawTrajectories(
+                    parent.arViewModel.rangeFinderSolutions,
+                    backwardOnlySolutions: parent.arViewModel.backwardOnlySolutions,
+                    in: arView
+                )
+                drawTerrainSampleMarkers(parent.arViewModel.terrainSamples.samples, in: arView)
+                drawFlagMarker(at: position, in: arView)
             }
         }
 
@@ -335,7 +161,6 @@ struct ARViewContainer: UIViewRepresentable {
       
         context.coordinator.arView = arViewModel.arView
         arViewModel.arView?.session.delegate = context.coordinator
-        arViewModel.arView?.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleTap)))
         context.coordinator.subscribeToCaptureTriggers()
 
 
@@ -429,54 +254,14 @@ struct ARViewContainer: UIViewRepresentable {
 }
 
 
-class ButtonViewModel: ObservableObject {
-    @Published var startCompleted: Bool = false
-    @Published var endCompleted: Bool = false
-    @Published var scanCompleted: Bool = false
-    @Published var canScan: Bool = false
-    // Combine을 사용하여 상태 변화 처리
-    var cancellables: Set<AnyCancellable> = []
-    
-    init() {
-        // startCompleted 또는 endCompleted가 변경될 때마다 canScan 상태 업데이트
-        //$canScan // Publisher로 사용
-        //         &$canScan // Binding을 사용하여 값을 쓸 수 있음
-        // 같은 결과이지만 다른 표현이고 sink는 Cancellable객체를 반환함
-        //        .sink { [weak self] canScan in
-        //                self?.canScan = canScan
-        //            }
-        //            .store(in: &cancellables)  // 구독을 저장
-        //        assign(to:) 메서드는 반환값이 없고, 구독을 멈출 수 있는 방법도 없음
-        //assign(to:)는 단순히 값을 할당하는 방식으로 동작하기 때문에,
-        //구독을 취소하거나 제어할 수 있는 Cancellable이없음
-        
-        $startCompleted
-            .combineLatest($endCompleted)
-            .map { start, end in
-                return start && end  // 둘 다 true일 때만 true
-            }
-            .assign(to: &$canScan)
-    }
-    
-    
-    // Reset 버튼을 눌렀을 때 상태 초기화
-    func reset() {
-        startCompleted = false
-        endCompleted = false
-        scanCompleted = false
-        
-    }
-}
-
-/// 두 점을 잇는 얇은 원통 하나를 만든다 — Tile.swift의 createLineEntity와 같은
-/// 컨벤션(원통 = 선)을 따르되, 화살촉/꼬리 장식은 없는 단순한 선분이다.
+/// 두 점을 잇는 얇은 원통 하나를 만든다 — 화살촉/꼬리 장식은 없는 단순한 선분이다.
 func makeTrajectorySegment(from start: simd_float3, to end: simd_float3, color: UIColor, radius: Float) -> ModelEntity {
     let length = simd_distance(start, end)
     guard length > 0.0001 else { return ModelEntity() }
 
     let direction = normalize(end - start)
     let cylinder = MeshResource.generateCylinder(height: length, radius: radius)
-    let material = SimpleMaterial(color: color, isMetallic: false)
+    let material = UnlitMaterial(color: color)
     let segmentEntity = ModelEntity(mesh: cylinder, materials: [material])
     segmentEntity.components.set(
         CollisionComponent(
@@ -490,6 +275,32 @@ func makeTrajectorySegment(from start: simd_float3, to end: simd_float3, color: 
     return segmentEntity
 }
 
+/// start→end 방향을 가리키는 화살표(가는 원기둥 몸통 + 원뿔 화살촉)를 만든다.
+func makeArrowSegment(from start: simd_float3, to end: simd_float3, color: UIColor, radius: Float) -> ModelEntity {
+    let length = simd_distance(start, end)
+    guard length > 0.0001 else { return ModelEntity() }
+
+    let direction = normalize(end - start)
+    let rotation = simd_quatf(from: simd_float3(0, 1, 0), to: direction)
+    let headLength = min(length * 0.4, radius * 8)
+    let shaftLength = max(length - headLength, 0.0001)
+    let material = UnlitMaterial(color: color)
+
+    let parent = ModelEntity()
+
+    let shaft = ModelEntity(mesh: .generateCylinder(height: shaftLength, radius: radius), materials: [material])
+    shaft.position = start + direction * (shaftLength / 2)
+    shaft.transform.rotation = rotation
+    parent.addChild(shaft)
+
+    let head = ModelEntity(mesh: .generateCone(height: headLength, radius: radius * 2.5), materials: [material])
+    head.position = start + direction * (shaftLength + headLength / 2)
+    head.transform.rotation = rotation
+    parent.addChild(head)
+
+    return parent
+}
+
 /// path의 인접한 점들을 선분으로 이어붙여 궤적 전체를 하나의 부모 엔티티로 만든다.
 func makeTrajectoryEntity(path: [simd_float3], color: UIColor, radius: Float) -> ModelEntity {
     let trajectoryEntity = ModelEntity()
@@ -501,11 +312,13 @@ func makeTrajectoryEntity(path: [simd_float3], color: UIColor, radius: Float) ->
     return trajectoryEntity
 }
 
-/// solutions를 모두 그리되, 첫 번째(solutions[0])만 강조색/굵은 선으로, 나머지는
-/// 옅은 색/얇은 선으로 그려 구분한다. 기존 "TrajectoryAnchor"가 있으면 먼저 지운다.
-func drawTrajectories(_ solutions: [PuttSolution], in arView: ARView) {
+/// 각 solution마다 중앙 경로 대신 "이 범위 안으로 치면 들어간다"는 좌/우 경계
+/// 경로(boundaryAPath/boundaryBPath) 두 개만 그린다. 백워드+포워드 병용 결과는
+/// 빨강/초록, 백워드 전용 결과는 파랑/주황으로 구분해서 같이 그려 두 방식을 눈으로
+/// 비교할 수 있게 한다. 기존 "TrajectoryAnchor"가 있으면 먼저 지운다.
+func drawTrajectories(_ solutions: [PuttSolution], backwardOnlySolutions: [PuttSolution], in arView: ARView) {
     removeAnchorWithName(for: arView, name: "TrajectoryAnchor")
-    guard !solutions.isEmpty else { return }
+    guard !solutions.isEmpty || !backwardOnlySolutions.isEmpty else { return }
 
     // removeAnchorWithName은 제거를 DispatchQueue.main.async로 미루므로, 새 앵커를
     // 여기서 동기로 추가하면 나중에 실행되는 제거 블록이 (같은 이름인) 새 앵커까지
@@ -515,11 +328,128 @@ func drawTrajectories(_ solutions: [PuttSolution], in arView: ARView) {
         let anchor = AnchorEntity(world: .zero)
         anchor.name = "TrajectoryAnchor"
 
-        for (index, solution) in solutions.enumerated() {
-            let color: UIColor = index == 0 ? .systemGreen : UIColor.white.withAlphaComponent(0.4)
-            let radius: Float = index == 0 ? 0.008 : 0.004
-            let trajectoryEntity = makeTrajectoryEntity(path: solution.path, color: color, radius: radius)
-            anchor.addChild(trajectoryEntity)
+        for solution in solutions {
+            let aEntity = makeTrajectoryEntity(path: solution.boundaryAPath, color: .systemRed, radius: 0.005)
+            anchor.addChild(aEntity)
+            let bEntity = makeTrajectoryEntity(path: solution.boundaryBPath, color: .systemGreen, radius: 0.005)
+            anchor.addChild(bEntity)
+        }
+
+        for solution in backwardOnlySolutions {
+            let aEntity = makeTrajectoryEntity(path: solution.boundaryAPath, color: .systemBlue, radius: 0.005)
+            anchor.addChild(aEntity)
+            let bEntity = makeTrajectoryEntity(path: solution.boundaryBPath, color: .systemOrange, radius: 0.005)
+            anchor.addChild(bEntity)
+        }
+
+        arView.scene.addAnchor(anchor)
+    }
+}
+
+/// 수집된 지형 샘플 각각의 위치에 작은 점을 찍어, 스캔 밀도를 눈으로 확인할 수 있게 한다.
+/// 기존 "TerrainSampleMarkersAnchor"가 있으면 먼저 지운다 (removeAnchorWithName과 같은
+/// 이유로 제거·추가 둘 다 async로 미뤄 순서를 보장한다).
+func drawTerrainSampleMarkers(_ samples: [TerrainSample], in arView: ARView) {
+    removeAnchorWithName(for: arView, name: "TerrainSampleMarkersAnchor")
+    guard !samples.isEmpty else { return }
+
+    DispatchQueue.main.async {
+        let anchor = AnchorEntity(world: .zero)
+        anchor.name = "TerrainSampleMarkersAnchor"
+
+        for sample in samples {
+            let marker = ModelEntity(
+                mesh: .generateSphere(radius: 0.02),
+                materials: [SimpleMaterial(color: .yellow, isMetallic: false)]
+            )
+            marker.position = sample.position
+            anchor.addChild(marker)
+
+            // 법선벡터를 그대로 그리면 대부분 거의 수직이라 기울기 방향이 잘 안 보인다 —
+            // 중력(y) 성분을 버리고 x,z 수평면에 사영한 "내리막 방향"을 지면에 눕혀서 그린다.
+            // 증폭 없이 실제 수평 성분 크기(≈기울기 정도) 그대로 — 평평하면 짧고,
+            // 실제로 기울어진(또는 바닥이 아닌 물체에 맞은) 지점만 길게 나온다.
+            let horizontalTilt = simd_float3(sample.normal.x, 0, sample.normal.z)
+            if simd_length(horizontalTilt) > 0.0001 {
+                let normalLine = makeArrowSegment(
+                    from: sample.position,
+                    to: sample.position + horizontalTilt,
+                    color: .cyan,
+                    radius: 0.002
+                )
+                anchor.addChild(normalLine)
+            }
+        }
+
+        arView.scene.addAnchor(anchor)
+    }
+}
+
+/// 볼 위치에 실제 골프공 크기의 흰 공을 표시한다 (조명에 반응하는 재질이라
+/// 둥근 입체감이 있다). 기존 "BallMarkerAnchor"가 있으면 먼저 지운다.
+func drawBallMarker(at ballPosition: simd_float3, in arView: ARView) {
+    removeAnchorWithName(for: arView, name: "BallMarkerAnchor")
+
+    DispatchQueue.main.async {
+        let anchor = AnchorEntity(world: .zero)
+        anchor.name = "BallMarkerAnchor"
+
+        let ball = ModelEntity(
+            mesh: .generateSphere(radius: 0.02135),
+            materials: [SimpleMaterial(color: .white, roughness: 0.4, isMetallic: false)]
+        )
+        ball.position = ballPosition
+        anchor.addChild(ball)
+
+        arView.scene.addAnchor(anchor)
+    }
+}
+
+/// 홀 위치에 지면과 수직으로 선 폴 + 빨간 깃발을 표시한다.
+/// 기존 "FlagMarkerAnchor"가 있으면 먼저 지운다.
+func drawFlagMarker(at holePosition: simd_float3, in arView: ARView) {
+    removeAnchorWithName(for: arView, name: "FlagMarkerAnchor")
+
+    DispatchQueue.main.async {
+        let anchor = AnchorEntity(world: .zero)
+        anchor.name = "FlagMarkerAnchor"
+
+        // 실제 홀컵 지름(10.8cm)의 얕은 원기둥 — 지면에 살짝 파묻힌 것처럼 배치.
+        let holeCup = ModelEntity(
+            mesh: .generateCylinder(height: 0.001, radius: 0.054),
+            materials: [UnlitMaterial(color: .systemGreen)]
+        )
+        holeCup.position = holePosition
+        anchor.addChild(holeCup)
+
+        let poleHeight: Float = 0.4
+        let pole = ModelEntity(
+            mesh: .generateCylinder(height: poleHeight, radius: 0.003),
+            materials: [UnlitMaterial(color: .white)]
+        )
+        pole.position = holePosition + simd_float3(0, poleHeight / 2, 0)
+        anchor.addChild(pole)
+
+        // 골프장 깃발은 삼각형(페넌트) 모양이고, 폴을 관통하는 게 아니라 폴 옆면에
+        // 붙어서 바깥으로 뻗어나간다 — 폴 쪽 세로변(x=0)에서 끝(tip, x=flagWidth)으로
+        // 좁아지는 삼각형 메쉬를 직접 만든다.
+        let flagWidth: Float = 0.1
+        let flagHeight: Float = 0.06
+        var flagDescriptor = MeshDescriptor(name: "flag")
+        flagDescriptor.positions = MeshBuffers.Positions([
+            SIMD3<Float>(0, flagHeight / 2, 0),
+            SIMD3<Float>(0, -flagHeight / 2, 0),
+            SIMD3<Float>(flagWidth, 0, 0)
+        ])
+        flagDescriptor.primitives = .triangles([0, 1, 2])
+
+        if let flagMesh = try? MeshResource.generate(from: [flagDescriptor]) {
+            let flag = ModelEntity(mesh: flagMesh, materials: [UnlitMaterial(color: .red)])
+            flag.position = holePosition + simd_float3(0, poleHeight - 0.05, 0)
+            // 고정된 방향의 메쉬는 옆에서 보면 두께가 0이라 사라져 보인다 —
+            // BillboardComponent를 붙여서 항상 카메라를 정면으로 바라보게 한다.
+            flag.components.set(BillboardComponent())
+            anchor.addChild(flag)
         }
 
         arView.scene.addAnchor(anchor)

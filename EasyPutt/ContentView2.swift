@@ -12,9 +12,9 @@ import simd
 
 struct ContentView2: View {
     @StateObject var arViewModel = ARViewModel()
-    @StateObject private var btnViewModel = ButtonViewModel()
-    @State var totalTileCount: Int = 0
-    let padding: Float = 0
+    @State private var showResults = false
+    @State private var showNormalsList = false
+    @State private var gridSpacingAtGestureStart: Float = 40
 
     var body: some View {
         ZStack {
@@ -23,174 +23,236 @@ struct ContentView2: View {
                 .environmentObject(arViewModel)
                 .edgesIgnoringSafeArea(.all)
 
-            // 상단 슬라이더 카드
-            VStack {
+            // 화면 중앙 조준 아이콘 (볼/홀 캡처 대상 지점)
+            if arViewModel.holePosition == nil {
+                Image(systemName: "viewfinder")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                    .foregroundColor(arViewModel.ballPosition == nil ? .green : .red)
+                    .allowsHitTesting(false)
+            }
+
+            // 조준용 3x3 정사각형 격자 (9칸이 뚜렷이 보이는 시각적 가이드 —
+            // 각 칸 중심이 실제 수집 지점과 정확히 일치한다, collectTerrainSamples() 참고)
+            // 손가락 핀치로 칸 크기(pt)를 조절한다 (최소 30pt).
+            if arViewModel.holePosition == nil {
+                GeometryReader { geo in
+                    let cx = geo.size.width / 2
+                    let cy = geo.size.height / 2
+                    let s = CGFloat(arViewModel.terrainSampleGridSpacing)
+                    let half = 1.5 * s
+                    Path { path in
+                        path.addRect(CGRect(x: cx - half, y: cy - half, width: 3 * s, height: 3 * s))
+                        path.move(to: CGPoint(x: cx - s / 2, y: cy - half))
+                        path.addLine(to: CGPoint(x: cx - s / 2, y: cy + half))
+                        path.move(to: CGPoint(x: cx + s / 2, y: cy - half))
+                        path.addLine(to: CGPoint(x: cx + s / 2, y: cy + half))
+                        path.move(to: CGPoint(x: cx - half, y: cy - s / 2))
+                        path.addLine(to: CGPoint(x: cx + half, y: cy - s / 2))
+                        path.move(to: CGPoint(x: cx - half, y: cy + s / 2))
+                        path.addLine(to: CGPoint(x: cx + half, y: cy + s / 2))
+                    }
+                    .stroke(Color.cyan.opacity(0.7), lineWidth: 1)
+
+                    if let meters = arViewModel.gridCellMeters {
+                        Text("한 칸: \(meters, specifier: "%.2f")m")
+                            .font(.caption2)
+                            .padding(4)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(6)
+                            .position(x: cx, y: cy - half - 14)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+
+            // 상단 컨트롤 + (필요시) 정보 패널 + 하단 바 — 전부 세이프에어리어 무시하고
+            // 화면 맨 위/맨 아래 끝에 붙인다.
+            VStack(spacing: 8) {
                 VStack(spacing: 4) {
                     HStack {
-                        Slider(value: $arViewModel.speed, in: 0...3, step: 0.5)
-                        Text("Speed: \(arViewModel.speed, specifier: "%.1f")")
+                        Button(action: { arViewModel.stimpReading = max(1.5, arViewModel.stimpReading - 0.1) }) {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        Text("Stimpmeter: \(arViewModel.stimpReading, specifier: "%.2f")m")
                             .font(.caption2)
                             .padding(4)
                             .background(Color.white.opacity(0.1))
                             .cornerRadius(8)
+                        Button(action: { arViewModel.stimpReading = min(4.0, arViewModel.stimpReading + 0.1) }) {
+                            Image(systemName: "plus.circle.fill")
+                        }
                     }
-                    .frame(height: 20)
-                    .scaleEffect(0.85)
-
-                    HStack {
-                        Slider(value: $arViewModel.direction, in: -1...1, step: 0.05)
-                        Text("Direction: \(arViewModel.direction, specifier: "%.2f")")
+                    if let distance = arViewModel.ballToHoleDistance, let adjusted = arViewModel.adjustedDistance {
+                        Text("실제 거리: \(distance, specifier: "%.2f")m / 평지 환산: \(adjusted, specifier: "%.2f")m")
                             .font(.caption2)
-                            .padding(4)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(8)
+                            .foregroundColor(.white)
                     }
-                    .frame(height: 20)
-                    .scaleEffect(0.85)
                 }
                 .padding(8)
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(12)
-                .padding(.top, 12)
 
-                Spacer()
-            }
+                if showResults, let distance = arViewModel.ballToHoleDistance {
+                    ScrollView {
+                        VStack(alignment: .leading) {
+                            Text("거리: \(distance, specifier: "%.2f")m")
+                            Text("볼: (0.00, 0.00) / 홀: (0.00, \(distance, specifier: "%.2f"))")
+                                .font(.caption2)
 
-            if let distance = arViewModel.ballToHoleDistance {
-                VStack {
-                    Text("거리: \(distance, specifier: "%.2f")m")
-                    Text("유효 방향: \(arViewModel.rangeFinderSolutions.count)개")
-                    ForEach(Array(arViewModel.rangeFinderSolutions.enumerated()), id: \.offset) { _, solution in
-                        Text("speed \(solution.speed, specifier: "%.2f") / dir (\(solution.direction.x, specifier: "%.2f"), \(solution.direction.z, specifier: "%.2f"))")
-                            .font(.caption2)
+                            if let combinedMs = arViewModel.rangeFinderElapsedMs, let backwardMs = arViewModel.backwardOnlyElapsedMs {
+                                Text("소요시간 — 백+포워드: \(combinedMs, specifier: "%.1f")ms / 백워드 전용: \(backwardMs, specifier: "%.1f")ms")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Text("[백+포워드] 유효 방향: \(arViewModel.rangeFinderSolutions.count)개")
+                                .font(.caption2.bold())
+                            ForEach(Array(arViewModel.rangeFinderSolutions.enumerated()), id: \.offset) { _, solution in
+                                solutionRows(solution, boundaryAColor: .red, boundaryBColor: .green)
+                            }
+
+                            Text("[백워드 전용] 유효 방향: \(arViewModel.backwardOnlySolutions.count)개")
+                                .font(.caption2.bold())
+                                .padding(.top, 4)
+                            ForEach(Array(arViewModel.backwardOnlySolutions.enumerated()), id: \.offset) { _, solution in
+                                solutionRows(solution, boundaryAColor: .blue, boundaryBColor: .orange)
+                            }
+                        }
+                        .padding(8)
                     }
-                }
-                .padding(8)
-                .background(.ultraThinMaterial)
-                .cornerRadius(8)
-                .padding(.top, 60)
-            }
-
-            // 타일 상태 표시 (하단)
-            if let tileGrid = arViewModel.tileGrid {
-                VStack {
-                    Spacer()
-
-                    VStack(spacing: 2) {
-                        Text(tileGrid.scanCompleted ? "✅ Scan Complete" : "📡 Scanning...")
-                        Text("\(tileGrid.projectedTiles.flatMap { $0 }.filter { $0 != nil }.count) / \(tileGrid.totalTileCount)")
-                    }
-                    .font(.caption2)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .frame(maxHeight: 260)
                     .background(.ultraThinMaterial)
                     .cornerRadius(8)
-                    .padding(.bottom, 20)
-                }
-            }
-        }
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 8) {
-                ActionButton(title: "Ball", color: .green) {
-                    arViewModel.captureBallSubject.send()
                 }
 
-                ActionButton(title: "Hole", color: .red) {
-                    arViewModel.captureHoleSubject.send()
-                }
-
-                ActionButton(title: "Start", color: .green, disabled: btnViewModel.startCompleted && btnViewModel.endCompleted) {
-                    guard let arView = arViewModel.arView else { return }
-                    btnViewModel.startCompleted = true
-                    startSetup(arViewModel: arViewModel)
-                    if  let position = arViewModel.tileGrid?.startPoint  {
-                        loadModel(for: arView, position: position,  name: "scull")
-                    }
-                }
-
-                ActionButton(title: "End", color: .red, disabled: btnViewModel.endCompleted || !btnViewModel.startCompleted) {
-                    guard let arView = arViewModel.arView else { return }
-                    endSetup(arViewModel: arViewModel)
-                    if let position = arViewModel.tileGrid?.endPoint {
-                        loadModel(for: arView, position: position, name: "scull")
-                    }
-                    if let tileGrid = arViewModel.tileGrid {
-                        tileGrid.updateGrid(arView: arView,
-                                            startPoint: tileGrid.startPoint,
-                                            endPoint: tileGrid.endPoint,
-                                            tileWidth: nil,
-                                            tileHeight: nil,
-                                            padding: nil)
-                        tileGrid.show()
-                    }
-                    btnViewModel.endCompleted = true
-                }
-
-                ActionButton(title: "Scan", color: btnViewModel.canScan ? .blue : .gray, disabled: !btnViewModel.canScan && btnViewModel.scanCompleted) {
-                    if !arViewModel.isScanning {
-                        arViewModel.isScanning = true
-                        print("Scanning started.")
-                    }
-                }
-                .onLongPressGesture(minimumDuration: 1.0, perform: {
-                    arViewModel.isScanning = true
-                    print("Long press started scanning.")
-                }, onPressingChanged: { pressing in
-                    if !pressing {
-//                        if arViewModel.arView?.debugOptions.contains(.showPhysics) == false {
-//                            arViewModel.arView?.debugOptions.insert(.showPhysics)
-//                        }
-                        if let padding = arViewModel.tileGrid?.padding, padding > 0.001 {
-                            arViewModel.tileGrid?.makePadding()
+                if showNormalsList {
+                    ScrollView {
+                        VStack {
+                            Text("지형 샘플: \(arViewModel.terrainSamples.count)개")
+                            ForEach(Array(arViewModel.terrainSamples.samples.enumerated()), id: \.offset) { index, sample in
+                                Text("#\(index) n(\(sample.normal.x, specifier: "%.3f"), \(sample.normal.y, specifier: "%.3f"), \(sample.normal.z, specifier: "%.3f"))")
+                                    .font(.caption2)
+                            }
                         }
-                        arViewModel.isScanning = false
-                        print("Scan button released.")
+                        .padding(8)
                     }
-                })
+                    .frame(maxHeight: 200)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(8)
+                }
 
-                ActionButton(title: "Smth", color: .orange) {
-                    guard let arView = arViewModel.arView else { return }
-                    if let tileGrid = arViewModel.tileGrid {
-                        if let anchor = tileGrid.projectedTileAnchor {
-                            arView.scene.removeAnchor(anchor)
+                Spacer()
+
+                HStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        ActionButton(title: "결과", color: showResults ? .blue : .gray) {
+                            showResults.toggle()
                         }
-                        tileGrid.displayAnchor?.children.removeAll()
-                        tileGrid.makeSmoothPadding()
+                        .frame(width: 60)
+
+                        ActionButton(title: "법선", color: showNormalsList ? .blue : .gray) {
+                            showNormalsList.toggle()
+                        }
+                        .frame(width: 60)
+
+                        Spacer(minLength: 0)
                     }
-                    if let smoothedAnchor = arViewModel.tileGrid?.smoothedProjectedTileAnchor {
-                        arViewModel.arView?.scene.addAnchor(smoothedAnchor)
+                    .frame(maxWidth: .infinity)
+
+                    Button(action: {
+                        if arViewModel.ballPosition == nil {
+                            arViewModel.captureBallSubject.send()
+                        } else if arViewModel.holePosition == nil {
+                            arViewModel.captureHoleSubject.send()
+                        }
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(.white)
+                            .background(
+                                Circle()
+                                    .fill(arViewModel.ballPosition == nil ? Color.green : Color.red)
+                                    .frame(width: 44, height: 44)
+                            )
                     }
-                    if let smoothedDisplay = arViewModel.tileGrid?.smoothedDisplayAnchor {
-                        arViewModel.arView?.scene.addAnchor(smoothedDisplay)
+                    .disabled(arViewModel.ballPosition != nil && arViewModel.holePosition != nil)
+
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
+
+                        ActionButton(title: "Reset", color: .orange) {
+                            guard let arView = arViewModel.arView else { return }
+                            arViewModel.ballPosition = nil
+                            arViewModel.holePosition = nil
+                            arViewModel.rangeFinderSolutions = []
+                            arViewModel.backwardOnlySolutions = []
+                            arViewModel.rangeFinderElapsedMs = nil
+                            arViewModel.backwardOnlyElapsedMs = nil
+                            arViewModel.ballToHoleDistance = nil
+                            arViewModel.stopCollectingTerrainSamples()
+                            arViewModel.terrainSamples.removeAll()
+                            removeAnchorWithName(for: arView, name: "TrajectoryAnchor")
+                            removeAnchorWithName(for: arView, name: "TerrainSampleMarkersAnchor")
+                            removeAnchorWithName(for: arView, name: "BallMarkerAnchor")
+                            removeAnchorWithName(for: arView, name: "FlagMarkerAnchor")
+                            showResults = false
+                            showNormalsList = false
+                            print("Reset complete")
+                        }
+                        .frame(width: 70)
                     }
+                    .frame(maxWidth: .infinity)
                 }
-
-                ActionButton(title: "Reset", color: .orange) {
-                    btnViewModel.reset()
-                    guard let arView = arViewModel.arView else { return }
-                    arViewModel.isScanning = false
-                    if let tileGrid = arViewModel.tileGrid {
-                        tileGrid.smoothedProjectedTileAnchor?.removeFromParent()
-                        tileGrid.projectedTileAnchor?.removeFromParent()
-                        tileGrid.smoothedDisplayAnchor?.removeFromParent()
-                        tileGrid.displayAnchor?.removeFromParent()
-                        tileGrid.destroy()
-                    }
-
-                    removeAnchorWithName(for: arView, name: "ScullAnchor")
-                    removeAnchorWithName(for: arView, name: "DisplayAnchor")
-
-                    let point = CGPoint(x: UIScreen.main.bounds.midX, y: UIScreen.main.bounds.midY)
-                    findRaycastResult(for: arView, point: point)
-
-                    print("Reset complete")
-                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 6)
+                .background(.ultraThinMaterial)
             }
             .padding(.horizontal, 8)
-            .padding(.bottom, 6)
-            .background(.ultraThinMaterial)
-            .cornerRadius(12)
+            .padding(.top, 4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .ignoresSafeArea(edges: [.top, .bottom])
+        .gesture(
+            MagnificationGesture()
+                .onChanged { value in
+                    let newValue = gridSpacingAtGestureStart * Float(value)
+                    arViewModel.terrainSampleGridSpacing = min(max(newValue, 30), 150)
+                }
+                .onEnded { _ in
+                    gridSpacingAtGestureStart = arViewModel.terrainSampleGridSpacing
+                }
+        )
+    }
+
+    @ViewBuilder
+    private func solutionRows(_ solution: PuttSolution, boundaryAColor: Color, boundaryBColor: Color) -> some View {
+        if let rel = arViewModel.puttRelative(solution.direction) {
+            let aimLine: String = {
+                guard let inches = arViewModel.aimOffsetInches(rel) else { return "" }
+                let side = inches >= 0 ? "오른쪽" : "왼쪽"
+                return " / 홀컵 기준 \(side) \(String(format: "%.1f", abs(inches)))in"
+            }()
+            Text("speed \(solution.speed, specifier: "%.2f") / 우: \(rel.right, specifier: "%.2f") 전진: \(rel.forward, specifier: "%.2f")\(aimLine)")
+                .font(.caption2)
+
+            if let boundaryA = solution.directionBoundaryA,
+               let relA = arViewModel.puttRelative(boundaryA),
+               let inchesA = arViewModel.aimOffsetInches(relA) {
+                let side = inchesA >= 0 ? "오른쪽" : "왼쪽"
+                Text("Boundary A: 홀컵 기준 \(side) \(String(format: "%.1f", abs(inchesA)))in 조준")
+                    .font(.caption2)
+                    .foregroundColor(boundaryAColor)
+            }
+            if let boundaryB = solution.directionBoundaryB,
+               let relB = arViewModel.puttRelative(boundaryB),
+               let inchesB = arViewModel.aimOffsetInches(relB) {
+                let side = inchesB >= 0 ? "오른쪽" : "왼쪽"
+                Text("Boundary B: 홀컵 기준 \(side) \(String(format: "%.1f", abs(inchesB)))in 조준")
+                    .font(.caption2)
+                    .foregroundColor(boundaryBColor)
+            }
         }
     }
 }

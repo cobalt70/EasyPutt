@@ -13,6 +13,16 @@ struct PuttSolution {
     /// 기록은 항상 공이 멈춘 지점). 시각화 용도이며, backwardCandidate()가 만드는
     /// 근사 후보나 verify()의 중간 보정 후보에는 채워지지 않는다(빈 배열).
     var path: [simd_float3] = []
+    /// 같은 속도(speed)는 유지한 채 방향(좌우 각도)만 틀어도 여전히 홀에 들어가는
+    /// 각도 범위의 두 경계 방향벡터. findSolutions()에서 directionRange(...)로
+    /// 채워지며, 어느 쪽이 "왼쪽"/"오른쪽"인지는 puttRelative()로 판단해야 한다
+    /// (여기선 그냥 두 경계일 뿐, 순서가 좌/우를 의미하지 않는다).
+    var directionBoundaryA: simd_float3?
+    var directionBoundaryB: simd_float3?
+    /// directionBoundaryA/B 방향으로 쳤을 때의 정방향 시뮬레이션 경로 — 시각화에서
+    /// "이 두 경계 사이로 치면 들어간다"는 걸 보여주기 위함. path와 같은 다운샘플링 규칙.
+    var boundaryAPath: [simd_float3] = []
+    var boundaryBPath: [simd_float3] = []
 }
 
 struct PuttRangeFinderConfig {
@@ -22,9 +32,16 @@ struct PuttRangeFinderConfig {
     var maxForwardSteps: Int = 4000
     /// 홀인으로 판정하는 최대 허용 오차 — 홀컵 반경(≈5.4cm) - 공 반지름(2.135cm).
     var captureRadius: Float = 0.033
-    /// 백워드 추적을 시작할 때 가정하는, 홀컵을 통과하는 속도의 스윕 값들.
-    /// 실제 "다잉 퍼팅"(홀컵을 겨우 넘기는 정도의 세기) 통과속도 범위(0.1~0.3 m/s)를 따른다.
-    var holeCrossingSpeeds: [Float] = [0.1, 0.15, 0.2, 0.25, 0.3]
+    /// 홀컵을 놓쳤을 때 이 정도만 지나쳐서 멈추는 세기(다잉 퍼팅)를 목표로 삼는다.
+    /// 실제 골프에서 흔히 말하는 "10~30cm 지나치는 세기"의 중간값.
+    var targetOverrunDistance: Float = 0.2
+    /// 백워드 추적을 시작할 때 가정하는, 홀컵을 통과하는 속도 — targetOverrunDistance를
+    /// rollingResistance(그린 스피드)에 맞춰 v = sqrt(2 × rollingResistance × 거리)로
+    /// 역산한다. 그린이 빠르면(rollingResistance 작음) 더 낮은 속도로도 같은 거리를
+    /// 지나치므로, 이 값도 자동으로 같이 낮아진다.
+    var holeCrossingSpeeds: [Float] {
+        [(2 * rollingResistance * targetOverrunDistance).squareRoot()]
+    }
     var maxCorrectionIterations: Int = 15
     /// 정밀검증 보정 반복에서 옆으로 빗나간 정도(m)에 대한 방향 보정 계수(rad/m).
     var directionGain: Float = 0.5
@@ -133,11 +150,205 @@ final class PuttRangeFinder {
                 holeCrossingSpeed: crossingSpeed
             ) else { continue }
 
-            if let verified = verify(candidate, ballPosition: ballPosition, holePosition: holePosition) {
+            if var verified = verify(candidate, ballPosition: ballPosition, holePosition: holePosition) {
+                if let range = directionRange(for: verified, ballPosition: ballPosition, holePosition: holePosition) {
+                    verified.directionBoundaryA = range.a
+                    verified.directionBoundaryB = range.b
+                    let boundaryA = PuttSolution(direction: range.a, speed: verified.speed)
+                    let boundaryB = PuttSolution(direction: range.b, speed: verified.speed)
+                    verified.boundaryAPath = simulateForward(boundaryA, from: ballPosition, holePosition: holePosition)?.path ?? []
+                    verified.boundaryBPath = simulateForward(boundaryB, from: ballPosition, holePosition: holePosition)?.path ?? []
+                }
                 solutions.append(verified)
             }
         }
         return solutions
+    }
+
+    /// forward 시뮬레이션(verify/correct)을 전혀 쓰지 않고, 백워드 추적 + 이분탐색만으로
+    /// 해와 좌우 범위를 직접 구한다. holeCrossingSpeeds 각각에 대해 backwardOnlySolve를
+    /// 호출한다 — findSolutions()와 대응되는 "백워드 전용" 버전.
+    func findSolutionsBackwardOnly(ballPosition: simd_float3, holePosition: simd_float3) -> [PuttSolution] {
+        var solutions: [PuttSolution] = []
+        for crossingSpeed in config.holeCrossingSpeeds {
+            guard let solution = backwardOnlySolve(
+                ballPosition: ballPosition,
+                holePosition: holePosition,
+                crossingSpeed: crossingSpeed
+            ) else { continue }
+            solutions.append(solution)
+        }
+        return solutions
+    }
+
+    /// 홀→공 직선을 탐색 기준각(0도)으로 삼아, 매 이분탐색을 탐색 시작(-maxAngleSearch)부터
+    /// 끝(+maxAngleSearch)까지 전체 구간을 브라켓으로 잡고 시작한다. 각 테스트 각도로 홀에서
+    /// 백워드 추적해 "공의 출발선"(공을 지나고 홀-공 직선에 수직인 선)에 도달하는 지점이 실제
+    /// 공 위치에서 좌우로 얼마나(부호 있게) 벗어나는지를 이분탐색의 판정 기준으로 쓴다.
+    /// target=0은 공을 정확히 맞히는 중앙 해, target=±captureRadius는 홀컵에 겨우 걸치는
+    /// 좌우 경계 — forward 시뮬레이션으로 검증하지 않으므로 verify()/correct()보다 빠르지만,
+    /// 근사 없이 물리 파라미터(구름저항)만으로 수렴하는 값이라 결과가 다를 수 있다. 시각화
+    /// 경로도 이 백워드 추적 경로를 그대로(홀→공을 공→홀 순서로 뒤집어) 채운다.
+    private func backwardOnlySolve(
+        ballPosition: simd_float3,
+        holePosition: simd_float3,
+        crossingSpeed: Float,
+        maxAngleSearch: Float = (Float.pi / 180) * 89,
+        bisectionIterations: Int = 24
+    ) -> PuttSolution? {
+        guard crossingSpeed > 0 else { return nil }
+
+        let toBall = ballPosition - holePosition
+        let toBallHorizontal = simd_float3(toBall.x, 0, toBall.z)
+        let ballAxisDistance = simd_length(toBallHorizontal)
+        guard ballAxisDistance > 0.0001 else { return nil }
+        let toBallUnit = toBallHorizontal / ballAxisDistance
+        let forwardAxis = -toBallUnit
+        let rightAxis = simd_float3(-forwardAxis.z, 0, forwardAxis.x)
+
+        struct BackwardTrace {
+            let crossingPosition: simd_float3
+            let velocity: simd_float3
+            let path: [simd_float3] // 홀→공 순서, 5스텝마다 다운샘플링
+        }
+
+        func traceBackward(angle: Float) -> BackwardTrace? {
+            let direction = rotateHorizontal(forwardAxis, by: angle)
+            let ball = GolfBall(initialPosition: holePosition, initialVelocity: direction * crossingSpeed)
+            ball.rollingResistance = config.rollingResistance
+            var path: [simd_float3] = [holePosition]
+
+            for step in 0..<config.maxBackwardSteps {
+                guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
+                ball.updateFromTorque(deltaTime: -config.deltaTime, surfaceNormal: normal)
+
+                let progress = simd_dot(
+                    simd_float3(ball.position.x - holePosition.x, 0, ball.position.z - holePosition.z),
+                    toBallUnit
+                )
+                if progress >= ballAxisDistance {
+                    path.append(ball.position)
+                    return BackwardTrace(crossingPosition: ball.position, velocity: ball.velocity, path: path)
+                }
+                if step % 5 == 0 {
+                    path.append(ball.position)
+                }
+                if simd_length(ball.velocity) < 0.0001 { return nil }
+            }
+            return nil
+        }
+
+        func offset(at angle: Float, target: Float) -> (offset: Float, trace: BackwardTrace)? {
+            guard let trace = traceBackward(angle: angle) else { return nil }
+            let miss = simd_float3(
+                trace.crossingPosition.x - ballPosition.x, 0,
+                trace.crossingPosition.z - ballPosition.z
+            )
+            return (simd_dot(miss, rightAxis) - target, trace)
+        }
+
+        func solveAngle(target: Float) -> BackwardTrace? {
+            guard let (lowOffset, _) = offset(at: -maxAngleSearch, target: target),
+                  let (highOffset, _) = offset(at: maxAngleSearch, target: target),
+                  (lowOffset > 0) != (highOffset > 0) else {
+                return nil
+            }
+
+            var low = -maxAngleSearch
+            var high = maxAngleSearch
+            let lowIsPositive = lowOffset > 0
+            var bestTrace: BackwardTrace?
+
+            for _ in 0..<bisectionIterations {
+                let mid = (low + high) / 2
+                guard let (midOffset, trace) = offset(at: mid, target: target) else { return nil }
+                bestTrace = trace
+                if (midOffset > 0) == lowIsPositive {
+                    low = mid
+                } else {
+                    high = mid
+                }
+            }
+            return bestTrace
+        }
+
+        guard let center = solveAngle(target: 0) else { return nil }
+        let speed = simd_length(center.velocity)
+        guard speed > 0.0001 else { return nil }
+
+        var solution = PuttSolution(
+            direction: center.velocity / speed,
+            speed: speed,
+            path: center.path.reversed()
+        )
+
+        if let boundaryA = solveAngle(target: config.captureRadius) {
+            let speedA = simd_length(boundaryA.velocity)
+            if speedA > 0.0001 {
+                solution.directionBoundaryA = boundaryA.velocity / speedA
+                solution.boundaryAPath = boundaryA.path.reversed()
+            }
+        }
+        if let boundaryB = solveAngle(target: -config.captureRadius) {
+            let speedB = simd_length(boundaryB.velocity)
+            if speedB > 0.0001 {
+                solution.directionBoundaryB = boundaryB.velocity / speedB
+                solution.boundaryBPath = boundaryB.path.reversed()
+            }
+        }
+
+        return solution
+    }
+
+    /// solution의 속도는 고정한 채 방향(좌우 각도)만 조금씩 틀어가며, 여전히 캡처
+    /// 반경 이내로 들어오는 각도의 두 경계를 찾는다. 먼저 coarseAngleStep 간격으로
+    /// 훑어서 "들어가다가 안 들어가기 시작하는" 구간을 대략 찾고, 그 구간 안에서
+    /// 이분탐색으로 정밀하게 좁힌다 — 다잉 퍼팅처럼 여유가 1도도 안 되는 좁은 범위도
+    /// coarse 스텝 하나 만에 "범위 없음"으로 뭉개지 않고 정확히 잡아낸다.
+    func directionRange(
+        for solution: PuttSolution,
+        ballPosition: simd_float3,
+        holePosition: simd_float3,
+        coarseAngleStep: Float = (Float.pi / 180) * 1.0,
+        maxCoarseSteps: Int = 60,
+        bisectionIterations: Int = 8
+    ) -> (a: simd_float3, b: simd_float3)? {
+        func captures(_ direction: simd_float3) -> Bool {
+            let test = PuttSolution(direction: direction, speed: solution.speed)
+            guard let result = simulateForward(test, from: ballPosition, holePosition: holePosition) else { return false }
+            return result.closestDistance <= config.captureRadius
+        }
+
+        guard captures(solution.direction) else { return nil }
+
+        func findBoundary(sign: Float) -> simd_float3 {
+            var lastGoodAngle: Float = 0
+            var firstBadAngle: Float?
+            for step in 1...maxCoarseSteps {
+                let angle = sign * coarseAngleStep * Float(step)
+                if captures(rotateHorizontal(solution.direction, by: angle)) {
+                    lastGoodAngle = angle
+                } else {
+                    firstBadAngle = angle
+                    break
+                }
+            }
+            guard var badAngle = firstBadAngle else {
+                return rotateHorizontal(solution.direction, by: sign * coarseAngleStep * Float(maxCoarseSteps))
+            }
+            var goodAngle = lastGoodAngle
+            for _ in 0..<bisectionIterations {
+                let midAngle = (goodAngle + badAngle) / 2
+                if captures(rotateHorizontal(solution.direction, by: midAngle)) {
+                    goodAngle = midAngle
+                } else {
+                    badAngle = midAngle
+                }
+            }
+            return rotateHorizontal(solution.direction, by: goodAngle)
+        }
+
+        return (findBoundary(sign: 1), findBoundary(sign: -1))
     }
 
     private struct ForwardSimulationResult {
@@ -163,6 +374,15 @@ final class PuttRangeFinder {
                 closestDistance = distance
                 closestPosition = ball.position
             }
+
+            // 홀 반경 안에 들어온 순간 그 지점에서 즉시 끊는다 — 매 스텝(5스텝마다가
+            // 아니라)마다 확인해야 한다, 안 그러면 빠른 공이 좁은 홀컵 반경(3.3cm)을
+            // 두 샘플 사이에 그냥 지나쳐서 "홀인했는데 못 자르는" 경우가 생긴다.
+            if distance <= config.captureRadius {
+                path.append(ball.position)
+                break
+            }
+
             if step % 5 == 0 {
                 path.append(ball.position)
             }
@@ -171,6 +391,7 @@ final class PuttRangeFinder {
                 break
             }
         }
+
         return ForwardSimulationResult(closestPosition: closestPosition, closestDistance: closestDistance, path: path)
     }
 

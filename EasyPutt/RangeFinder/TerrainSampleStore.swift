@@ -16,13 +16,6 @@ struct TerrainSample {
 final class TerrainSampleStore {
     private(set) var samples: [TerrainSample] = []
 
-    /// 질의 지점에서 가장 가까운 샘플까지의 거리가 이 값을 넘으면 nil을 반환한다 —
-    /// 실제 스캔은 손으로 든 카메라로 듬성듬성 수집되므로, 커버되지 않은 지점에서
-    /// 엉뚱하게 먼 샘플의 법선벡터를 반환하는 대신 "모른다"고 답해야 한다.
-    /// 기본값은 ArViewModel의 terrainSampleMinSpacing(수집 버스트 간 최소 카메라 이동
-    /// 거리)과 같은 척도로 맞췄다.
-    var maxDistance: Float = 0.5
-
     var isEmpty: Bool { samples.isEmpty }
     var count: Int { samples.count }
 
@@ -34,6 +27,8 @@ final class TerrainSampleStore {
         samples.removeAll()
     }
 
+    /// 가장 가까운 샘플의 법선벡터를 거리 제한 없이 반환한다 — 스캔이 듬성듬성해서
+    /// 근처에 샘플이 없더라도, 있는 것 중 가장 가까운 값을 최선의 추정치로 쓴다.
     func nearestNormal(to position: simd_float3) -> simd_float3? {
         guard !samples.isEmpty else { return nil }
         var bestIndex = 0
@@ -45,7 +40,6 @@ final class TerrainSampleStore {
                 bestIndex = index
             }
         }
-        guard bestDistanceSquared <= maxDistance * maxDistance else { return nil }
         return samples[bestIndex].normal
     }
 

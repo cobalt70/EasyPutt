@@ -29,23 +29,6 @@ struct ContentView: View {
         .safeAreaInset(edge: .bottom){
             HStack{
                 Button(action: {
-
-                    if let arView = arViewModel.arView, let position = arViewModel.tileGrid?.startPoint {
-                        
-                        loadModel(for: arView, position : position, name:  "scull" )
-                    }
-                  
-                }) {
-                    Text("ADD")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(10)
-                     
-                }
-                .frame(maxWidth: .infinity) //
-                Button(action: {
                     // 버튼 클릭 시 실행할 코드
                     var point : CGPoint = .zero
                     point.x = UIScreen.main.bounds.midX

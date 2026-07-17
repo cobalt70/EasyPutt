@@ -193,62 +193,6 @@ func removeModelEntityAndChildren(_ entity: Entity) {
 
 
 
-func startSetup(arViewModel: ARViewModel) {
-    // USDZ 파일 로딩
-    guard let tileGrid = arViewModel.tileGrid  else {
-        print("Failed to load arView")
-        return
-    }
-    //    let center = CGPoint(x:  arView.frame.size.width / 2, y: arView.frame.size.height / 2)
-    //    print("center \(center)")
-    //    if let result = arView.raycast(from: center, allowing: .estimatedPlane, alignment: .any).first {
-    //        // Raycast 위치에서 모델을 배치
-    //
-    //        arViewModel.tileGrid?.startPoint = simd_float3(x: result.worldTransform.columns.3.x, y: result.worldTransform.columns.3.y, z:result.worldTransform.columns.3.z )
-    //        print("startPoint : \(String(describing: arViewModel.tileGrid?.startPoint))")
-    //    }
-    //
-    
-    if let virtualX = arViewModel.virtualX, let virtualY = arViewModel.virtualY, let virtualZ = arViewModel.virtualZ {
-        print("virtual start \(virtualX) \(virtualY) \(virtualZ)")
-        tileGrid.startPoint = SIMD3<Float>(virtualX, virtualY, virtualZ)
-    }
-    else if let realX = arViewModel.realX , let realY = arViewModel.realY , let realZ = arViewModel.realZ {
-        tileGrid.startPoint = SIMD3<Float>(realX, realY, realZ)
-        print("real start \(String(describing: arViewModel.tileGrid?.startPoint))")
-        
-    }
-  
-}
-
-func endSetup(arViewModel: ARViewModel) {
-    
-    guard let tileGrid = arViewModel.tileGrid  else {
-        print("Failed to load tileGrid ")
-        return
-    }
-    //    let center = CGPoint(x:  arView.frame.size.width / 2, y: arView.frame.size.height / 2)
-    //    print("center \(center)")
-    //    if let result = arView.raycast(from: center, allowing: .estimatedPlane, alignment: .any).first {
-    //        // Raycast 위치에서 모델을 배치
-    //
-    //        arViewModel.tileGrid?.startPoint = simd_float3(x: result.worldTransform.columns.3.x, y: result.worldTransform.columns.3.y, z:result.worldTransform.columns.3.z )
-    //        print("startPoint : \(String(describing: arViewModel.tileGrid?.startPoint))")
-    //    }
-    //
-    
-    if let virtualX = arViewModel.virtualX, let virtualY = arViewModel.virtualY, let virtualZ = arViewModel.virtualZ {
-        print("virtual end \(virtualX) \(virtualY) \(virtualZ)")
-        tileGrid.endPoint = SIMD3<Float>(virtualX, virtualY, virtualZ)
-    }
-    else if let realX = arViewModel.realX , let realY = arViewModel.realY , let realZ = arViewModel.realZ {
-        tileGrid.endPoint = SIMD3<Float>(realX, realY, realZ)
-        print("real end \(String(describing: arViewModel.tileGrid?.endPoint))")
-    }
-    
-}
-
-
 // 화면 중앙에서 raycast하여 모델을 올려놓는 함수
 func placeModelInCenter(for arView: ARView, modelEntity: ModelEntity , anchorName : String = "" ) {
     // 화면 중앙을 기준으로 raycast 수행

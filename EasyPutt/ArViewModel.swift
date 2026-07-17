@@ -9,74 +9,89 @@ import Combine
 import SwiftUI
 import RealityKit
 import simd
+import Foundation
 class ARViewModel : ObservableObject{
     //static var shared = ARViewModel()
     @Published var arView: ARView?
     @Published var raycastHitPosition: simd_float3?
     //raycastHitPosition이 있으면 아래 6개 점은 어디에 필요할까??
-    
+
     @Published var realX: Float?
     @Published var realY : Float?
     @Published var realZ : Float?
     @Published var virtualX: Float?
     @Published var virtualY : Float?
     @Published var virtualZ : Float?
-    
-    @Published var tileGrid : TileGrid?
 
     let terrainSamples = TerrainSampleStore()
     var isCollectingTerrainSamples: Bool = false
-    /// 화면을 N x N 격자로 나눠 raycast한다 (N = 이 값). 촘촘하게 하려면 늘린다.
-    var terrainSampleGridResolution: Int = 3
-    /// 격자 지점들이 화면 폭 기준 어느 범위에 퍼져 있는지 (0=왼쪽 끝, 1=오른쪽 끝).
-    /// 넓히면(예: 0.05...0.95) 더 넓은 실제 폭을 커버한다.
-    var terrainSampleGridSpan: ClosedRange<CGFloat> = 0.2...0.8
-    /// 새 격자 수집을 실행하려면 카메라가 "지금까지의 모든 수집 지점"으로부터
+    /// 화면에 보여줄 3x3 조준 격자선의 칸 크기(포인트) — 순전히 시각적 가이드이며,
+    /// 실제 수집 지점(화면 중앙)에는 영향을 주지 않는다.
+    @Published var terrainSampleGridSpacing: Float = 40
+    /// 새 수집을 실행하려면 조준 지점이 "지금까지의 모든 수집 지점"으로부터
     /// 최소 이만큼(미터) 떨어져 있어야 한다 — 제자리 정체나 경로가 교차할 때
-    /// 중복 수집을 막는다.
-    var terrainSampleMinSpacing: Float = 0.5
+    /// 중복 수집을 막는다. 실제로는 매 틱 gridCellMeters(격자 한 칸의 실제 거리)를
+    /// 우선 쓰고, 그 값을 못 구했을 때만 이 고정값으로 대체한다.
+    var terrainSampleMinSpacing: Float = 0.3
+    /// 카메라에서 조준 지점까지의 거리가 이보다 가까우면 수집을 생략한다 —
+    /// 너무 가까운/가파른 각도의 raycast는 노이즈가 커서 신뢰하기 어렵다.
+    var terrainSampleMinCenterDistance: Float = 0.3
     private var terrainSampleCollectionCenters: [simd_float3] = []
     private var centerRaycastMarkerEntity: ModelEntity?
     private var centerRaycastMarkerAnchor: AnchorEntity?
+    /// 지금 이 순간, 화면상 격자 한 칸(terrainSampleGridSpacing)이 실제 지면에서
+    /// 몇 미터에 해당하는지 — 카메라 거리/각도에 따라 계속 바뀌므로 매 틱 갱신한다.
+    @Published var gridCellMeters: Float?
 
-    var ballPosition: simd_float3?
-    var holePosition: simd_float3?
+    @Published var ballPosition: simd_float3?
+    @Published var holePosition: simd_float3?
     @Published var rangeFinderSolutions: [PuttSolution] = []
+    /// forward 시뮬레이션(verify/correct) 없이 백워드 추적 + 이분탐색만으로 구한 해/범위
+    /// — rangeFinderSolutions(백워드+포워드 병용)와 값/속도를 비교하기 위한 두 번째 결과.
+    @Published var backwardOnlySolutions: [PuttSolution] = []
     @Published var ballToHoleDistance: Float?
+    /// 두 방식의 계산 소요시간(ms) — 백워드 전용이 forward 검증이 없는 만큼 더 빠를 것으로
+    /// 예상되나, 실제 값으로 비교하기 위해 측정한다.
+    @Published var rangeFinderElapsedMs: Double?
+    @Published var backwardOnlyElapsedMs: Double?
+
+    /// 스팀프미터 측정값(미터) — 표준 스팀프 램프 방출 속도(1.83m/s)로 굴렸을 때
+    /// 이 거리만큼 가다 멈추는 그린 속도. rollingResistance = v² / (2 × stimpReading)로 환산한다.
+    @Published var stimpReading: Float = 2.70
+    private let stimpReleaseSpeed: Float = 1.83
+    var rollingResistance: Float {
+        (stimpReleaseSpeed * stimpReleaseSpeed) / (2 * stimpReading)
+    }
+
+    /// 대표(첫 번째) 솔루션의 속도를 "평지였다면 이 속도로 얼마나 갔을까"로 되돌린
+    /// 거리 — 오르막/내리막 때문에 실제 거리와 체감이 달라지는 걸 보여준다.
+    /// d = v² / (2 × rollingResistance), stimpReading 환산과 같은 등감속 공식의 역산.
+    var adjustedDistance: Float? {
+        guard let speed = rangeFinderSolutions.first?.speed else { return nil }
+        return (speed * speed) / (2 * rollingResistance)
+    }
 
     let captureBallSubject = PassthroughSubject<Void, Never>()
     let captureHoleSubject = PassthroughSubject<Void, Never>()
 
     var tileGridOn: Bool = false
     var isRaycasting: Bool = false
-    @Published var isScanning: Bool = false
     var focusEntity : FocusEntity?
-    var ballEntity : ModelEntity?
-    var previousTile : ModelEntity?
-    var currentTile: ModelEntity?
-    var previousVelocity: SIMD3<Float> = SIMD3(0, 0, 0)
-    var previousPosition: SIMD3<Float> = SIMD3(0, 0, 0)
     var arRaycastResult : ARRaycastResult?
     var vrRaycastResult : CollisionCastHit?
-    
-    @Published var speed: Float = 2.0
-    @Published var direction: Float = 0.0
-    
+
     private var cancellables = Set<AnyCancellable>()
     private let updateSubject = PassthroughSubject<Void, Never>()
     private var updateSubscription: Cancellable?
     init() {
         self.arView = ARView(frame: .zero)
-        self.tileGrid = TileGrid()
-     
-      
 
         DispatchQueue.main.async {
             if let arView =  self.arView {
                 self.focusEntity = FocusEntity(on: arView, style: .colored(onColor: MaterialColorParameter.color(.blue), offColor: MaterialColorParameter.color(.yellow), nonTrackingColor: MaterialColorParameter.color(.green)))
             }
         }
-        
+
      // 1초단위로 publish해서 ArView에서 startPoint endPoint를 update 하는데 필요할까?
         updateSubject
             .throttle(for: .seconds(0.1), scheduler: DispatchQueue.main, latest: true)
@@ -85,255 +100,19 @@ class ARViewModel : ObservableObject{
                 guard let arView = self.arView else { return }
                 let center = arView.center
                 (self.arRaycastResult, self.vrRaycastResult) = self.performRaycast(at :center )
+                self.updateGridCellMeters()
                 self.collectTerrainSamples()
                 self.updateCenterRaycastMarker()
 
 //                if let  raycastResult  = self.arRaycastResult , let camera = arView.session.currentFrame?.camera {
-//                    
+//
 //                    self.focusEntity?.state = .tracking(raycastResult: raycastResult , camera: camera)
 //                }
-              removeBallsBeyondDistanceFromCamera(distanceThreshold: 20.0)
-                guard let hit = vrRaycastResult ,
-                      isScanning == true  else {
-                   return
-                }
-                if let entity = hit.entity as? ModelEntity {
-                        // 기존 Material 가져오기
-                    if  entity.name == "Tile", var modelComponent = entity.model {
-                            // 새로운 색상 Material 생성
-                            modelComponent.materials = [UnlitMaterial(color: .red, applyPostProcessToneMap: false)]
-                            entity.model = modelComponent // 변경 적용
-                        }
-                    }
-                var row : Int = 0
-                var col : Int = 0
-              
-                if let gridComponent = hit.entity.components[GridComponent.self] {
-                     row = gridComponent.getRow()
-                     col = gridComponent.getColumn()
-                    print("Tile Row: \(row), Tile Column: \(col) ")
-                }
-                guard let tile = self.tileGrid?.getTile(col: col, row: row) , tile.projected == false else {
-                    print("original Tile is nil")
-                    return
-                }
-               
-                tile.projectedPoints.removeAll()
-                
-                var m : Int = 0
-                
-                for point in tile.points {
-                   
-                    let query =  ARRaycastQuery(origin: point, direction: simd_float3(0, -1, 0), allowing: .estimatedPlane, alignment: .any)
-                    
-                    let results =  arView.session.raycast(query)
-                    print("point result \(m)th \(point) \(results.first?.worldTransform.translation ?? simd_float3(0,0,0))")
-                    
-                    if let firstResult = results.first {
-                        
-                        print("raycast success ")
-                        let transform = firstResult.worldTransform
-                        // 법선 벡터 (normal vector)는 변환 행렬의 세 번째 열을 사용합니다.
-                        let normalVector = simd_make_float3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z)
-                        
-                        let projectedPoint = simd_make_float3(transform.columns.3.x, transform.columns.3.y + 0.05, transform.columns.3.z)
-                        
-                        print("point index \(m)th  row: \(row) col: \(col) projectedPoint:(\(projectedPoint.x) \(projectedPoint.y) \(projectedPoint.z))")
-                        
-                        tile.projectedPoints.append(projectedPoint)
-                    } else {
-                        print("index \(m) row\(row) col\(col) ")
-                        print("raycast point failed. ")
-                      
-                    }
-                    m += 1
-                }
-                //tileGrid.projectedTiles.flatMap { $0 }.filter { $0 != nil }.count
-                if tile.projectedPoints.compactMap({$0 }).count == 4 {
-                    tileGrid?.projectedTiles[col][row] = tile
-                    tile.tileEntity?.removeFromParent()
-                    tile.makeProjectedTileEntity()
-                    
-                    if let projectedTileAnchor = tileGrid?.projectedTileAnchor, let projectedTileEntity = tile.projectedTileEntity , let displayAnchor = tileGrid?.displayAnchor, let displayEntity = tile.displayEntity , tile.projected == true {
-                        // projectedTileAnchor.addChild(projectedTileEntityCollection)이 미리 되있어야 하
-                        print("projectedTileAnchor add child success!!")
-                        
-                        projectedTileAnchor.addChild(projectedTileEntity)
-//                        projectedTileEntityCollection.addChild(projectedTileEntity)
-//                        tileGrid?.projectedTileEntityCollection  = projectedTileEntityCollection
-//                        
-                         displayAnchor.addChild(displayEntity)
-                    } else {
-                        print("error: \(tile.projectedTileEntity) \(tileGrid?.displayAnchor) \(tile.displayEntity) \(tile.projected)")
-                    }
-                 
-                } else {
-                    tile.projected = false
-                    print("raycast Tile Fail: projectedPoints count error: (row: \(tile.row!) , col: \(tile.col!)), origin: \(tile.points) , projected:\(tile.projectedPoints)")
-                    return
-                             }
-                
             }
             .store(in: &cancellables)
-        
-        arView?.scene.subscribe(to: CollisionEvents.Began.self) { [weak self] event in
-               
-                       self?.handleCollisionBegan(event)
-               
-               }
-               .store(in: &cancellables)
-        
-        arView?.scene.subscribe(to: CollisionEvents.Ended.self) { [weak self] event in
-              
-                       self?.handleCollisionEnded(event)
-                
-               }
-               .store(in: &cancellables)
-        
-        arView?.scene.subscribe(to: SceneEvents.Update.self, on: ballEntity) { _ in
-            self.trackBallVelocity()
-        }.store(in: &cancellables)
 
     }
-    
-    func trackBallVelocity() {
-        
-     
-        if let ballPhysicsBody = ballEntity?.components[PhysicsMotionComponent.self] {
-            
-            previousVelocity = ballPhysicsBody.linearVelocity
-            previousPosition = ballEntity?.position ?? simd_float3(x:0, y:0, z:0)
-            previousTile = currentTile
-            print("trackBall:  \(Date()) \(ballEntity!.name) v:\(previousVelocity) p: \(previousPosition)")
-        }
-    }
 
-    // ARView에서 raycast를 처리하는 메서드
-    private func  handleCollisionEnded(_ event: CollisionEvents.Ended) {
-        let entityA = event.entityA
-        let entityB = event.entityB
-        let ballEntity = (entityA.name == "GolfBall") ? entityA : entityB
-        let otherEntity = (entityA.name == "GolfBall") ? entityB : entityA
-        let collision = event
-        
-
-        if otherEntity.name == "ProjectedTile" {
-            if let gridComponent = otherEntity.components[GridComponent.self] {
-                let   row = gridComponent.getRow()
-                let   col = gridComponent.getColumn()
-                print("CollisionEnded Tile Row: \(row), Tile Column: \(col) \(ballEntity.name ) \(otherEntity.name)")
-            }
-        }
-    }
-    private func handleCollisionBegan(_ event: CollisionEvents.Began) {
-        let entityA = event.entityA
-        let entityB = event.entityB
-        let ballEntity = (entityA.name == "GolfBall") ? entityA : entityB
-        let otherEntity = (entityA.name == "GolfBall") ? entityB : entityA
-        let collision = event
-        let contacts = collision.contacts
-        
-        if otherEntity.name == "ProjectedTile" {
-            if let gridComponent = otherEntity.components[GridComponent.self] {
-                let   row = gridComponent.getRow()
-                let   col = gridComponent.getColumn()
-                print("CollisionBegan Tile Row: \(row), Tile Column: \(col) \(ballEntity.name ) \(otherEntity.name) ")
-            }
-        }
-    }
-
-    
-    func handleBallTransition(_ ballEntity: Entity) -> Float?{
-        let ballPosition = ballEntity.position
-        
-        if let nextTileHeight = getTileHeight() {
-            print("nextTileHeight success")
-            return nextTileHeight
-            
-        } else {
-             print("nextTileHeight is nil")
-            return nil
-        }
-        
-        // 공의 반지름을 고려하여 높이 보정
-        //       let newHeight = nextTileHeight + ball.radius
-        
-        // 부드러운 이동 적용
-        //      ball.move(to: Transform(translation: SIMD3(ballPosition.x, newHeight, ballPosition.z)), relativeTo: nil, duration: 0.2)
-    }
-    
-    func getTileHeight() -> Float?{
-        // previousTile currentTile
-        guard let previousTile = previousTile , let currentTile = currentTile else {
-            print("previousTile or currentTile is nil")
-            return nil
-        }
-        guard let gridComponentPrev = previousTile.components[GridComponent.self] ,
-              let gridComponentCurr = currentTile.components[GridComponent.self] else {
-            print("gridComponent is nil")
-            return nil
-        }
-        let rowPrev = gridComponentPrev.row
-        let colPrev = gridComponentPrev.column
-        let rowCurr = gridComponentCurr.row
-        let colCurr = gridComponentCurr.column
-        
-        guard let tileGrid = self.tileGrid else {
-            print("tileGrid is nil")
-            return nil
-        }
-        print("Row: \(rowPrev) / \(rowCurr) , Column: \(colPrev) / \(colCurr)")
-        var height : Float? = nil
-        
-        if rowCurr == rowPrev && colCurr == colPrev {
-            height = ballEntity?.position.y ?? 0
-            print("Direction: no Change \(ballEntity?.position.y ?? 0) \(height)")
-        }
-        else if rowCurr == rowPrev - 1 && colCurr == colPrev {
-            
-            if let tile = tileGrid.projectedTiles[colCurr][rowCurr] {
-                
-                height = max( tile.projectedPoints[2].y, tile.projectedPoints[3].y ) + 0.022
-                
-            }
-            print("Direction: Down \(ballEntity?.position.y ?? 0) \(height)")
-            
-        } else if rowCurr == rowPrev  && colCurr == colPrev + 1  {
-            
-            if let tile = tileGrid.projectedTiles[colCurr][rowCurr] {
-                
-                height = max( tile.projectedPoints[0].y  , tile.projectedPoints[3].y) + 0.022
-                
-            }
-            print("Direction: Right \(ballEntity?.position.y ?? 0) \(height)")
-        } else if rowCurr == rowPrev + 1 && colCurr == colPrev  {
-            
-            if let tile = tileGrid.projectedTiles[colCurr][rowCurr] {
-                print("hit rowcurr = rowprev +1")
-                height = max( tile.projectedPoints[0].y  , tile.projectedPoints[1].y) + 0.022
-                print("hit rowcurr = rowprev + 1 \(height) ")
-            }
-            print("Direction: UP \(ballEntity?.position.y ?? 0) \(height) ")
-        }
-        else if rowCurr == rowPrev  && colCurr == colPrev - 1  {
-            
-            if let tile = tileGrid.projectedTiles[colCurr][rowCurr] {
-                
-                height = max( tile.projectedPoints[1].y  , tile.projectedPoints[2].y) + 0.022
-                
-            }
-            print("Direction: Left \(ballEntity?.position.y ?? 0) \(height)")
-        }
-        else {
-            print("나중에 대각선 움직임 반영")
-            height = ballEntity?.position.y ?? 0 + 0.02
-            height = nil
-        }
-        return height
-    }
-    
-    
-    
     func requestRaycastUpdate() {
         updateSubject.send()
     }
@@ -348,44 +127,47 @@ class ARViewModel : ObservableObject{
         isCollectingTerrainSamples = false
     }
 
-    /// 카메라가 지금까지의 모든 수집 지점으로부터 `terrainSampleMinSpacing` 이상
-    /// 떨어져 있을 때만, 화면을 N x N 격자로 나눠 각 지점에서 raycast해
-    /// (좌표, 법선벡터) 샘플을 모은다. `sceneReconstruction`처럼 상시 전체
-    /// 환경을 재구성하지 않고, 필요한 순간에만 가볍게 여러 지점을 훑는다.
+    /// 화면 중앙을 기준으로 화면에 보이는 3x3 정사각형 격자(칸 크기 = terrainSampleGridSpacing,
+    /// 포인트 단위)의 9칸 전부가 화면 안에 온전히 들어올 때만(모서리가 잘리지 않을 때만)
+    /// 각 칸 중심의 (좌표, 법선벡터)를 수집한다. "조준 지점"(중앙 칸)이 마지막으로 수집한
+    /// 지점들로부터 `terrainSampleMinSpacing` 이상 떨어졌을 때만 새로 수집한다.
     func collectTerrainSamples() {
         guard isCollectingTerrainSamples, let arView = self.arView else { return }
+        let bounds = arView.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
 
+        let cx = bounds.width / 2
+        let cy = bounds.height / 2
+        let s = CGFloat(terrainSampleGridSpacing)
+        let half = 1.5 * s
+        guard cx - half >= 0, cx + half <= bounds.width, cy - half >= 0, cy + half <= bounds.height else { return }
+
+        func groundHit(at screenPoint: CGPoint) -> (position: simd_float3, normal: simd_float3)? {
+            guard let ray = arView.screenToWorldRay(screenPoint) else { return nil }
+            let query = ARRaycastQuery(origin: ray.origin, direction: normalize(ray.direction), allowing: .estimatedPlane, alignment: .any)
+            guard let hit = arView.session.raycast(query).first else { return nil }
+            let transform = hit.worldTransform
+            let position = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+            let normal = simd_make_float3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z)
+            return (position, normal)
+        }
+
+        guard let centerHit = groundHit(at: CGPoint(x: cx, y: cy)) else { return }
         let cameraPosition = arView.cameraTransform.translation
+        guard simd_distance(cameraPosition, centerHit.position) > terrainSampleMinCenterDistance else { return }
+
+        let minSpacing = gridCellMeters ?? terrainSampleMinSpacing
         let tooClose = terrainSampleCollectionCenters.contains {
-            simd_distance($0, cameraPosition) < terrainSampleMinSpacing
+            simd_distance($0, centerHit.position) < minSpacing
         }
         guard !tooClose else { return }
-        terrainSampleCollectionCenters.append(cameraPosition)
+        terrainSampleCollectionCenters.append(centerHit.position)
 
-        let bounds = arView.bounds
-        guard bounds.width > 0, bounds.height > 0, terrainSampleGridResolution > 0 else { return }
-
-        let fractions: [CGFloat] = (0..<terrainSampleGridResolution).map { index in
-            guard terrainSampleGridResolution > 1 else { return (terrainSampleGridSpan.lowerBound + terrainSampleGridSpan.upperBound) / 2 }
-            let t = CGFloat(index) / CGFloat(terrainSampleGridResolution - 1)
-            return terrainSampleGridSpan.lowerBound + t * (terrainSampleGridSpan.upperBound - terrainSampleGridSpan.lowerBound)
-        }
-
-        for xFraction in fractions {
-            for yFraction in fractions {
-                let screenPoint = CGPoint(x: bounds.width * xFraction, y: bounds.height * yFraction)
-                guard let ray = arView.screenToWorldRay(screenPoint) else { continue }
-                let query = ARRaycastQuery(
-                    origin: ray.origin,
-                    direction: normalize(ray.direction),
-                    allowing: .estimatedPlane,
-                    alignment: .any
-                )
-                guard let hit = arView.session.raycast(query).first else { continue }
-                let transform = hit.worldTransform
-                let position = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
-                let normal = simd_make_float3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z)
-                terrainSamples.add(position: position, normal: normal)
+        let offsets: [CGFloat] = [-s, 0, s]
+        for yOffset in offsets {
+            for xOffset in offsets {
+                guard let hit = groundHit(at: CGPoint(x: cx + xOffset, y: cy + yOffset)) else { continue }
+                terrainSamples.add(position: hit.position, normal: hit.normal)
             }
         }
     }
@@ -427,6 +209,51 @@ class ARViewModel : ObservableObject{
         centerRaycastMarkerEntity?.position = position
     }
 
+    /// 화면 중앙에서 동서남북 4방향으로 격자 한 칸(terrainSampleGridSpacing)만큼 떨어진
+    /// 지점들을 각각 지면에 raycast해서, 중앙까지의 실제 거리를 평균 낸다 — 폰 각도에 따라
+    /// 방향별로 값이 달라질 수 있어 평균으로 대표값을 삼는다. 화면상 격자 크기가 카메라
+    /// 거리/각도에 따라 실제로 몇 미터를 의미하는지 실시간으로 보여주기 위함.
+    func updateGridCellMeters() {
+        guard let arView = self.arView else {
+            gridCellMeters = nil
+            return
+        }
+        let bounds = arView.bounds
+        guard bounds.width > 0, bounds.height > 0 else {
+            gridCellMeters = nil
+            return
+        }
+        let cx = bounds.width / 2
+        let cy = bounds.height / 2
+        let s = CGFloat(terrainSampleGridSpacing)
+
+        func groundPosition(at screenPoint: CGPoint) -> simd_float3? {
+            guard let ray = arView.screenToWorldRay(screenPoint) else { return nil }
+            let query = ARRaycastQuery(origin: ray.origin, direction: normalize(ray.direction), allowing: .estimatedPlane, alignment: .any)
+            guard let hit = arView.session.raycast(query).first else { return nil }
+            return simd_make_float3(hit.worldTransform.columns.3.x, hit.worldTransform.columns.3.y, hit.worldTransform.columns.3.z)
+        }
+
+        guard let center = groundPosition(at: CGPoint(x: cx, y: cy)) else {
+            gridCellMeters = nil
+            return
+        }
+
+        let neighbors = [
+            CGPoint(x: cx + s, y: cy),
+            CGPoint(x: cx - s, y: cy),
+            CGPoint(x: cx, y: cy + s),
+            CGPoint(x: cx, y: cy - s),
+        ].compactMap { groundPosition(at: $0) }
+
+        guard !neighbors.isEmpty else {
+            gridCellMeters = nil
+            return
+        }
+        let distances = neighbors.map { simd_distance(center, $0) }
+        gridCellMeters = distances.reduce(0, +) / Float(distances.count)
+    }
+
     func runRangeFinder() {
         guard let ball = ballPosition, let hole = holePosition else {
             print("runRangeFinder: ball 또는 hole 위치가 없음")
@@ -436,15 +263,43 @@ class ARViewModel : ObservableObject{
             simd_float3(ball.x, 0, ball.z),
             simd_float3(hole.x, 0, hole.z)
         )
-        let finder = PuttRangeFinder(terrain: terrainSamples)
+        let finder = PuttRangeFinder(terrain: terrainSamples, config: PuttRangeFinderConfig(rollingResistance: rollingResistance))
+
+        let combinedStart = Date()
         rangeFinderSolutions = finder.findSolutions(ballPosition: ball, holePosition: hole)
-        print("runRangeFinder: \(rangeFinderSolutions.count)개 solution 발견")
+        rangeFinderElapsedMs = Date().timeIntervalSince(combinedStart) * 1000
+
+        let backwardOnlyStart = Date()
+        backwardOnlySolutions = finder.findSolutionsBackwardOnly(ballPosition: ball, holePosition: hole)
+        backwardOnlyElapsedMs = Date().timeIntervalSince(backwardOnlyStart) * 1000
+    }
+
+    /// 볼→홀 직선을 forward 축으로 삼는 "퍼트 좌표계"에서, 주어진 수평 방향벡터의
+    /// (오른쪽, 전진) 성분을 반환한다. 세션 시작 시점에 고정되는 임의의 AR 월드축
+    /// 대신, 사용자가 실제로 서서 보는 볼→홀 방향 기준으로 dir을 해석하기 위함.
+    func puttRelative(_ direction: simd_float3) -> (right: Float, forward: Float)? {
+        guard let ball = ballPosition, let hole = holePosition else { return nil }
+        let toHole = simd_float3(hole.x - ball.x, 0, hole.z - ball.z)
+        guard simd_length(toHole) > 0.0001 else { return nil }
+        let forwardAxis = normalize(toHole)
+        let rightAxis = simd_float3(-forwardAxis.z, 0, forwardAxis.x)
+        return (right: simd_dot(direction, rightAxis), forward: simd_dot(direction, forwardAxis))
+    }
+
+    /// 초기 조준 방향을 직선으로 연장했을 때, 홀컵까지의 거리(forward)만큼 나아간
+    /// 지점이 홀컵 중심에서 좌우로 몇 인치 떨어지는지를 구한다. 실제 궤적은 경사
+    /// 때문에 휘어 들어가지만, 이건 "홀컵 기준 몇 인치 옆을 보고 쳐야 하는지"를
+    /// 직선 근사로 직관적으로 보여주기 위한 값이다. 상한/하한 없이 계산값 그대로 반환한다.
+    func aimOffsetInches(_ rel: (right: Float, forward: Float)) -> Float? {
+        guard let distance = ballToHoleDistance, rel.forward > 0.0001 else { return nil }
+        let lateralMeters = distance * (rel.right / rel.forward)
+        return lateralMeters / 0.0254
     }
     //arview.session.raycast : 현실세계 감지 arview.makeRaycastQuery 먼저 하고..
     //a arView.raycast(from: center, allowing: .estimatedPlane, alignment: .any).first
     //arview.scene.raycast : arView.scene.raycast(origin: origin, direction: direction)
-    
-    
+
+
     func performRaycast(at screenPoint: CGPoint) -> (realResults:  ARRaycastResult?,virtualResults : CollisionCastHit?) {
         // 1️⃣ 현실 세계 감지 (ARKit)
         guard let arView  = self.arView else { return (nil,nil) }
@@ -454,7 +309,7 @@ class ARViewModel : ObservableObject{
         let rayOrigin = arView.cameraTransform.translation // 카메라 위치
         let rayDirection = normalize(arView.screenToWorldRay(screenPoint)!.direction)
         let virtualResults = arView.scene.raycast(origin: rayOrigin, direction: rayDirection, length: 100)
-        
+
         if let virtualHit = virtualResults.first {
             let virtualPosition = virtualHit.position
             print("🎯 가상 객체 감지: \(virtualPosition) \(virtualHit.entity.name)")
@@ -462,30 +317,30 @@ class ARViewModel : ObservableObject{
             self.virtualY = virtualPosition.y
             self.virtualZ = virtualPosition.z
             self.raycastHitPosition = virtualPosition
-            
+
         } else {
             self.virtualX = nil
             self.virtualY = nil
             self.virtualZ = nil
             print("🎯 가상객체없음")
         }
-        
-        
+
+
         let camPos = camTransform.translation
         let camDirection = camTransform.matrix.columns.2
         let direction = simd_float3(-camDirection.x, -camDirection.y, -camDirection.z)
-   
+
         let rcQuery = ARRaycastQuery(
             origin: camPos,
             direction: direction,
             allowing: .estimatedPlane,
             alignment: .any
         )
-        
+
         let realResults = arView.session.raycast(rcQuery)
         // Check for a result matching target
-       
-        
+
+
         if let realHit = realResults.first {
             let realPosition = simd_float3(realHit.worldTransform.columns.3.x,
                                            realHit.worldTransform.columns.3.y,
@@ -495,7 +350,7 @@ class ARViewModel : ObservableObject{
             self.realX = realPosition.x
             self.realY = realPosition.y
             self.realZ = realPosition.z
-            
+
         } else {
             self.realX = nil
             self.realY = nil
@@ -503,29 +358,6 @@ class ARViewModel : ObservableObject{
         }
         print("현실타겟\(realResults.first?.anchor) 가상이름\(virtualResults.first?.entity.name)")
         return (realResults.first, virtualResults.first)
-    }
-        
-        
-    func removeBallsBeyondDistanceFromCamera(distanceThreshold: Float) {
-        // ARView에서 카메라 위치 가져오기
-        guard let arView = arView else {
-            return
-        }
-        let cameraPosition = arView.cameraTransform.translation
-        // 모든 ballEntity를 확인하여 거리가 threshold 이상이면 삭제
-        for anchor in arView.scene.anchors {
-            for entity in anchor.children {
-                // entity가 ballEntity인지 확인하고 거리 계산
-                if let ballEntity = entity as? ModelEntity, ballEntity.name == "GolfBall" {
-                    let distance = simd_distance(cameraPosition, ballEntity.position)
-                    if distance > distanceThreshold {
-                        // distance가 20m 이상이면 ballEntity 삭제
-                        ballEntity.removeFromParent()
-                        print("BallEntity removed due to distance: \(distance) meters")
-                    }
-                }
-            }
-        }
     }
 
 }
@@ -536,7 +368,7 @@ extension ARView {
         guard let raycastQuery = self.makeRaycastQuery(from: point, allowing: .estimatedPlane, alignment: .any) else {
             return nil
         }
-        
+
         let rayOrigin = raycastQuery.origin
         let rayDirection = raycastQuery.direction
 
@@ -551,4 +383,3 @@ extension float4x4 {
         self.columns.3 = SIMD4<Float>(translation, 1.0)
     }
 }
-
