@@ -181,10 +181,13 @@ final class PuttRangeFinder {
         return solutions
     }
 
-    /// 홀→공 직선을 탐색 기준각(0도)으로 삼아, 매 이분탐색을 탐색 시작(-maxAngleSearch)부터
-    /// 끝(+maxAngleSearch)까지 전체 구간을 브라켓으로 잡고 시작한다. 각 테스트 각도로 홀에서
-    /// 백워드 추적해 "공의 출발선"(공을 지나고 홀-공 직선에 수직인 선)에 도달하는 지점이 실제
-    /// 공 위치에서 좌우로 얼마나(부호 있게) 벗어나는지를 이분탐색의 판정 기준으로 쓴다.
+    /// 홀→공 직선을 탐색 기준각(0도)으로 삼는다. 각 테스트 각도로 홀에서 백워드 추적해
+    /// "공의 출발선"(공을 지나고 홀-공 직선에 수직인 선)에 도달하는 지점이 실제 공 위치에서
+    /// 좌우로 얼마나(부호 있게) 벗어나는지를 판정 기준으로 쓴다. 0도에서 시작해 그 부호를
+    /// 줄이는 방향으로 coarseAngleStep씩(탐색 시작→끝) 넓혀가며 부호가 뒤집히는 지점을 찾은
+    /// 뒤, 그 구간에서 이분탐색으로 좁힌다 — 양 끝 각도(예: ±89도)가 미리 둘 다 유효한
+    /// 추적이어야 한다는 조건 없이도 안전하게 수렴한다(각도가 클수록 홀에서 거의 옆으로
+    /// 쏘는 셈이라 추적이 중간에 끊길 수 있는데, 그 경우 그 지점 이전까지만 탐색한다).
     /// target=0은 공을 정확히 맞히는 중앙 해, target=±captureRadius는 홀컵에 겨우 걸치는
     /// 좌우 경계 — forward 시뮬레이션으로 검증하지 않으므로 verify()/correct()보다 빠르지만,
     /// 근사 없이 물리 파라미터(구름저항)만으로 수렴하는 값이라 결과가 다를 수 있다. 시각화
@@ -193,7 +196,8 @@ final class PuttRangeFinder {
         ballPosition: simd_float3,
         holePosition: simd_float3,
         crossingSpeed: Float,
-        maxAngleSearch: Float = (Float.pi / 180) * 89,
+        coarseAngleStep: Float = (Float.pi / 180) * 1.0,
+        maxCoarseSteps: Int = 89,
         bisectionIterations: Int = 24
     ) -> PuttSolution? {
         guard crossingSpeed > 0 else { return nil }
@@ -207,6 +211,7 @@ final class PuttRangeFinder {
         let rightAxis = simd_float3(-forwardAxis.z, 0, forwardAxis.x)
 
         struct BackwardTrace {
+            let angle: Float
             let crossingPosition: simd_float3
             let velocity: simd_float3
             let path: [simd_float3] // 홀→공 순서, 5스텝마다 다운샘플링
@@ -228,7 +233,7 @@ final class PuttRangeFinder {
                 )
                 if progress >= ballAxisDistance {
                     path.append(ball.position)
-                    return BackwardTrace(crossingPosition: ball.position, velocity: ball.velocity, path: path)
+                    return BackwardTrace(angle: angle, crossingPosition: ball.position, velocity: ball.velocity, path: path)
                 }
                 if step % 5 == 0 {
                     path.append(ball.position)
@@ -238,7 +243,7 @@ final class PuttRangeFinder {
             return nil
         }
 
-        func offset(at angle: Float, target: Float) -> (offset: Float, trace: BackwardTrace)? {
+        func offset(at angle: Float, target: Float) -> (value: Float, trace: BackwardTrace)? {
             guard let trace = traceBackward(angle: angle) else { return nil }
             let miss = simd_float3(
                 trace.crossingPosition.x - ballPosition.x, 0,
@@ -247,23 +252,54 @@ final class PuttRangeFinder {
             return (simd_dot(miss, rightAxis) - target, trace)
         }
 
-        func solveAngle(target: Float) -> BackwardTrace? {
-            guard let (lowOffset, _) = offset(at: -maxAngleSearch, target: target),
-                  let (highOffset, _) = offset(at: maxAngleSearch, target: target),
-                  (lowOffset > 0) != (highOffset > 0) else {
+        // startAngle에서 프로브를 시작해 그 결과를 판정 기준(target)에 맞춰 탐색한다.
+        // 중앙 해(target=0)는 0도에서 시작하지만, 좌우 경계(target=±captureRadius)는
+        // 이미 구해둔 중앙 해의 각도에서 시작한다 — 매번 0도부터 다시 훑을 필요 없이,
+        // 이미 정답 근처라는 걸 알고 있으니 거기서부터 살짝만 더 틀어보면 된다
+        // (directionRange가 verify()로 구한 중앙 방향에서부터 경계를 찾아나가는 것과 같은 패턴).
+        func solveAngle(target: Float, startAngle: Float = 0) -> BackwardTrace? {
+            guard let (baseOffset, baseTrace) = offset(at: startAngle, target: target) else {
+                print("[백워드전용] target=\(target): \(startAngle * 180 / .pi)도(시작점) 추적 실패")
                 return nil
             }
+            // 수렴 허용치를 2.5cm로 느슨하게 잡는다 — 어차피 captureRadius(3.3cm) 자체가
+            // 보수적인 근사치라, 굳이 mm 단위까지 이분탐색을 더 돌릴 필요가 없다.
+            if abs(baseOffset) < 0.025 { return baseTrace }
 
-            var low = -maxAngleSearch
-            var high = maxAngleSearch
-            let lowIsPositive = lowOffset > 0
+            // 속도 벡터를 +각도로 돌리면 rightAxis 쪽으로 기울지만, dt<0(역방향 적분)라
+            // 실제 위치 이동은 속도의 반대 방향이라 결과 경로는 -rightAxis(반대쪽)로 휜다.
+            // 그래서 baseOffset이 +(공 기준 오른쪽으로 빗나감)이면 그걸 줄이기 위해
+            // +각도 쪽으로 걸어가야 한다(그 반대가 아니라).
+            let searchSign: Float = baseOffset > 0 ? 1 : -1
+            var lowAngle: Float = startAngle
+            var highAngle: Float?
+            let lowIsPositive = baseOffset > 0
+
+            for step in 1...maxCoarseSteps {
+                let angle = startAngle + searchSign * coarseAngleStep * Float(step)
+                guard let (value, _) = offset(at: angle, target: target) else {
+                    print("[백워드전용] target=\(target): \(angle * 180 / .pi)도에서 추적 끊김, 그 전까지만 탐색")
+                    break
+                }
+                if (value > 0) != lowIsPositive {
+                    highAngle = angle
+                    break
+                }
+                lowAngle = angle
+            }
+
+            guard var high = highAngle else {
+                print("[백워드전용] target=\(target): \(startAngle * 180 / .pi)도에서 \(maxCoarseSteps)도 안에 부호 반전 못 찾음(브라켓 실패)")
+                return nil
+            }
+            var low = lowAngle
             var bestTrace: BackwardTrace?
 
             for _ in 0..<bisectionIterations {
                 let mid = (low + high) / 2
-                guard let (midOffset, trace) = offset(at: mid, target: target) else { return nil }
+                guard let (value, trace) = offset(at: mid, target: target) else { return bestTrace }
                 bestTrace = trace
-                if (midOffset > 0) == lowIsPositive {
+                if (value > 0) == lowIsPositive {
                     low = mid
                 } else {
                     high = mid
@@ -282,20 +318,23 @@ final class PuttRangeFinder {
             path: center.path.reversed()
         )
 
-        if let boundaryA = solveAngle(target: config.captureRadius) {
-            let speedA = simd_length(boundaryA.velocity)
-            if speedA > 0.0001 {
-                solution.directionBoundaryA = boundaryA.velocity / speedA
-                solution.boundaryAPath = boundaryA.path.reversed()
-            }
-        }
-        if let boundaryB = solveAngle(target: -config.captureRadius) {
-            let speedB = simd_length(boundaryB.velocity)
-            if speedB > 0.0001 {
-                solution.directionBoundaryB = boundaryB.velocity / speedB
-                solution.boundaryBPath = boundaryB.path.reversed()
-            }
-        }
+        // 경계는 추가 시뮬레이션 없이 순수 기하로 구한다 — 3cm만큼 옆으로 비켜나는 데 필요한
+        // 각도를 작은각 근사(atan(3cm/거리))로 구해서, 중앙 해의 최종 방향벡터를 그만큼
+        // 회전시킨 게 곧 경계 방향이다(중앙해 자체도 2.5cm 허용치로 느슨하게 구했으니, 굳이
+        // captureRadius(3.3cm) 정밀값을 쓸 필요 없이 3cm로 반올림해도 오차는 무시할 만하다).
+        // 백워드 추적을 또 돌리는 것보다 훨씬 빠르고, 시각화 경로도 실제 궤적 대신 공→그
+        // 방향으로 뻗은 직선으로 대체한다(공→홀 거리만큼).
+        let boundaryShiftDistance: Float = 0.03
+        let boundaryAngleOffset = atan(boundaryShiftDistance / ballAxisDistance)
+        let centerDirection = solution.direction
+
+        let boundaryADirection = simd_normalize(rotateHorizontal(centerDirection, by: boundaryAngleOffset))
+        solution.directionBoundaryA = boundaryADirection
+        solution.boundaryAPath = [ballPosition, ballPosition + boundaryADirection * ballAxisDistance]
+
+        let boundaryBDirection = simd_normalize(rotateHorizontal(centerDirection, by: -boundaryAngleOffset))
+        solution.directionBoundaryB = boundaryBDirection
+        solution.boundaryBPath = [ballPosition, ballPosition + boundaryBDirection * ballAxisDistance]
 
         return solution
     }

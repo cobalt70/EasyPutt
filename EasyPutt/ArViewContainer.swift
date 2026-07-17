@@ -329,16 +329,16 @@ func drawTrajectories(_ solutions: [PuttSolution], backwardOnlySolutions: [PuttS
         anchor.name = "TrajectoryAnchor"
 
         for solution in solutions {
-            let aEntity = makeTrajectoryEntity(path: solution.boundaryAPath, color: .systemRed, radius: 0.005)
+            let aEntity = makeTrajectoryEntity(path: solution.boundaryAPath, color: .systemRed, radius: 0.0025)
             anchor.addChild(aEntity)
-            let bEntity = makeTrajectoryEntity(path: solution.boundaryBPath, color: .systemGreen, radius: 0.005)
+            let bEntity = makeTrajectoryEntity(path: solution.boundaryBPath, color: .systemGreen, radius: 0.0025)
             anchor.addChild(bEntity)
         }
 
         for solution in backwardOnlySolutions {
-            let aEntity = makeTrajectoryEntity(path: solution.boundaryAPath, color: .systemBlue, radius: 0.005)
+            let aEntity = makeTrajectoryEntity(path: solution.boundaryAPath, color: .systemBlue, radius: 0.0025)
             anchor.addChild(aEntity)
-            let bEntity = makeTrajectoryEntity(path: solution.boundaryBPath, color: .systemOrange, radius: 0.005)
+            let bEntity = makeTrajectoryEntity(path: solution.boundaryBPath, color: .systemOrange, radius: 0.0025)
             anchor.addChild(bEntity)
         }
 
