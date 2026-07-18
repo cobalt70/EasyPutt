@@ -94,6 +94,31 @@ class ARViewModel : ObservableObject{
         return (speed * speed) / (2 * rollingResistance)
     }
 
+    /// 볼-홀 두 점의 3D 직선거리와 높이차만으로 직접 구한 평지환산 거리 — 백워드/
+    /// 포워드 풀이(rangeFinderSolutions)를 전혀 거치지 않아 볼/홀 위치만 있으면 바로
+    /// 나온다. 경사가 완만하고 거의 직선에 가까운 그린에서는 adjustedDistance(실제
+    /// 풀이된 speed 기반)와 비슷해야 하지만, 볼-홀 사이 지형이 오르막-내리막으로
+    /// 굴곡져 있으면(중간 지형을 전혀 안 보고 양끝 높이차 하나로만 경사를 가정하므로)
+    /// 그 굴곡을 반영하지 못한다.
+    /// alpha: 볼→홀 3D 직선이 수평면과 이루는 경사각(양수 = 오르막).
+    /// 5/7 계수는 GolfBall.updateFromTorque의 굴림 가속도 모델과 맞춘 것이고
+    /// (구가 미끄러짐 없이 구를 때 위치에너지 일부가 회전운동에너지로 가는 관성 보정),
+    /// rollingResistance는 GolfBall.applyRollingResistance처럼 경사와 무관하게
+    /// 고정값으로 다뤄서(cos(alpha)로 깎지 않음) 실제 시뮬레이션 물리와 일치시켰다.
+    var slopeAdjustedDistance: Float? {
+        guard let ball = ballPosition, let hole = holePosition else { return nil }
+        let distance = simd_distance(ball, hole)
+        guard distance > 0.0001 else { return nil }
+        let dy = hole.y - ball.y
+        let alpha = asin(max(-1, min(1, dy / distance)))
+        let totalDeceleration = (5.0 / 7.0) * 9.8 * sin(alpha) + rollingResistance
+        // 아주 가파른 내리막이면 경사가 구름저항보다 강해 공이 멈추지 않고 계속
+        // 가속되는 구조가 될 수 있다 — 이 경우 "멈추는 거리"라는 개념 자체가
+        // 성립하지 않으므로 nil을 반환한다(그린 대부분은 완만해 거의 발생하지 않음).
+        guard totalDeceleration > 0 else { return nil }
+        return distance * totalDeceleration / rollingResistance
+    }
+
     let captureBallSubject = PassthroughSubject<Void, Never>()
     let captureHoleSubject = PassthroughSubject<Void, Never>()
 
@@ -282,10 +307,7 @@ class ARViewModel : ObservableObject{
             print("runRangeFinder: ball 또는 hole 위치가 없음")
             return
         }
-        ballToHoleDistance = simd_distance(
-            simd_float3(ball.x, 0, ball.z),
-            simd_float3(hole.x, 0, hole.z)
-        )
+        ballToHoleDistance = simd_distance(ball, hole)
         let finder = PuttRangeFinder(terrain: terrainSamples, config: PuttRangeFinderConfig(rollingResistance: rollingResistance))
 
         let combinedStart = Date()
@@ -313,8 +335,11 @@ class ARViewModel : ObservableObject{
     /// 지점이 홀컵 중심에서 좌우로 몇 cm 떨어지는지를 구한다. 실제 궤적은 경사
     /// 때문에 휘어 들어가지만, 이건 "홀컵 기준 몇 cm 옆을 보고 쳐야 하는지"를
     /// 직선 근사로 직관적으로 보여주기 위한 값이다. 상한/하한 없이 계산값 그대로 반환한다.
+    /// 좌우 오프셋은 수평(플레이어가 실제로 걷는 방향) 기준이라, ballToHoleDistance(3D
+    /// 직선거리, 높이차 포함)가 아니라 여기서 별도로 구한 수평거리를 쓴다.
     func aimOffsetCentimeters(_ rel: (right: Float, forward: Float)) -> Float? {
-        guard let distance = ballToHoleDistance, rel.forward > 0.0001 else { return nil }
+        guard let ball = ballPosition, let hole = holePosition, rel.forward > 0.0001 else { return nil }
+        let distance = simd_distance(simd_float3(ball.x, 0, ball.z), simd_float3(hole.x, 0, hole.z))
         let lateralMeters = distance * (rel.right / rel.forward)
         return lateralMeters * 100
     }
