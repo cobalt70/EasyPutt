@@ -13,7 +13,7 @@ import simd
 struct ContentView: View {
     @StateObject var arViewModel = ARViewModel()
     @State private var showResults = false
-    @State private var showNormalsList = false
+    @State private var showSettings = false
     @State private var gridSpacingAtGestureStart: Float = 60
     @State private var resultCardExpanded: Bool = true
 
@@ -74,19 +74,6 @@ struct ContentView: View {
             // 화면 맨 위/맨 아래 끝에 붙인다.
             VStack(spacing: 8) {
                 VStack(spacing: 4) {
-                    HStack {
-                        Button(action: { arViewModel.stimpReading = max(1.5, arViewModel.stimpReading - 0.1) }) {
-                            Image(systemName: "minus.circle.fill")
-                        }
-                        Text("Stimpmeter: \(arViewModel.stimpReading, specifier: "%.2f")m")
-                            .font(.caption2)
-                            .padding(4)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(8)
-                        Button(action: { arViewModel.stimpReading = min(4.0, arViewModel.stimpReading + 0.1) }) {
-                            Image(systemName: "plus.circle.fill")
-                        }
-                    }
                     if let aim = aimDescription, let distance = arViewModel.ballToHoleDistance, let adjusted = arViewModel.adjustedDistance {
                         Button(action: { resultCardExpanded.toggle() }) {
                             if resultCardExpanded {
@@ -108,66 +95,12 @@ struct ContentView: View {
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(12)
 
-                if showResults, let distance = arViewModel.ballToHoleDistance {
-                    ScrollView {
-                        VStack(alignment: .leading) {
-                            Text("거리: \(distance, specifier: "%.2f")m")
-                            Text("볼: (0.00, 0.00) / 홀: (0.00, \(distance, specifier: "%.2f"))")
-                                .font(.caption2)
-
-                            if let combinedMs = arViewModel.rangeFinderElapsedMs, let backwardMs = arViewModel.backwardOnlyElapsedMs {
-                                Text("소요시간 — 백+포워드: \(combinedMs, specifier: "%.1f")ms / 백워드 전용: \(backwardMs, specifier: "%.1f")ms")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Text("[백+포워드] 유효 방향: \(arViewModel.rangeFinderSolutions.count)개")
-                                .font(.caption2.bold())
-                            ForEach(Array(arViewModel.rangeFinderSolutions.enumerated()), id: \.offset) { _, solution in
-                                solutionRows(solution, boundaryAColor: .red, boundaryBColor: .green)
-                            }
-
-                            Text("[백워드 전용] 유효 방향: \(arViewModel.backwardOnlySolutions.count)개")
-                                .font(.caption2.bold())
-                                .padding(.top, 4)
-                            ForEach(Array(arViewModel.backwardOnlySolutions.enumerated()), id: \.offset) { _, solution in
-                                solutionRows(solution, boundaryAColor: .blue, boundaryBColor: .orange)
-                            }
-                        }
-                        .padding(8)
-                    }
-                    .frame(maxHeight: 260)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(8)
-                }
-
-                if showNormalsList {
-                    ScrollView {
-                        VStack {
-                            Text("지형 샘플: \(arViewModel.terrainSamples.count)개")
-                            ForEach(Array(arViewModel.terrainSamples.samples.enumerated()), id: \.offset) { index, sample in
-                                Text("#\(index) n(\(sample.normal.x, specifier: "%.3f"), \(sample.normal.y, specifier: "%.3f"), \(sample.normal.z, specifier: "%.3f"))")
-                                    .font(.caption2)
-                            }
-                        }
-                        .padding(8)
-                    }
-                    .frame(maxHeight: 200)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(8)
-                }
-
                 Spacer()
 
                 HStack(spacing: 0) {
                     HStack(spacing: 8) {
-                        ActionButton(title: "결과", color: showResults ? .blue : .gray) {
-                            showResults.toggle()
-                        }
-                        .frame(width: 60)
-
-                        ActionButton(title: "법선", color: showNormalsList ? .blue : .gray) {
-                            showNormalsList.toggle()
+                        ActionButton(title: "설정", color: .gray) {
+                            showSettings = true
                         }
                         .frame(width: 60)
 
@@ -212,7 +145,6 @@ struct ContentView: View {
                             removeAnchorWithName(for: arView, name: "BallMarkerAnchor")
                             removeAnchorWithName(for: arView, name: "FlagMarkerAnchor")
                             showResults = false
-                            showNormalsList = false
                             print("Reset complete")
                         }
                         .frame(width: 70)
@@ -231,6 +163,9 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
         .ignoresSafeArea(edges: [.top, .bottom])
+        .sheet(isPresented: $showSettings) {
+            SettingsSheetView(arViewModel: arViewModel, showResults: $showResults)
+        }
         .gesture(
             MagnificationGesture()
                 .onChanged { value in
@@ -241,33 +176,6 @@ struct ContentView: View {
                     gridSpacingAtGestureStart = arViewModel.terrainSampleGridSpacing
                 }
         )
-    }
-
-    @ViewBuilder
-    private func solutionRows(_ solution: PuttSolution, boundaryAColor: Color, boundaryBColor: Color) -> some View {
-        if let rel = arViewModel.puttRelative(solution.direction) {
-            let aimLine: String = {
-                guard let centimeters = arViewModel.aimOffsetCentimeters(rel) else { return "" }
-                return " / 홀컵 기준 \(String(format: "%+.1f", centimeters))cm"
-            }()
-            Text("speed \(solution.speed, specifier: "%.2f") / 우: \(rel.right, specifier: "%.2f") 전진: \(rel.forward, specifier: "%.2f")\(aimLine)")
-                .font(.caption2)
-
-            if let boundaryA = solution.directionBoundaryA,
-               let relA = arViewModel.puttRelative(boundaryA),
-               let centimetersA = arViewModel.aimOffsetCentimeters(relA) {
-                Text("Boundary A: 홀컵 기준 \(String(format: "%+.1f", centimetersA))cm 조준")
-                    .font(.caption2)
-                    .foregroundColor(boundaryAColor)
-            }
-            if let boundaryB = solution.directionBoundaryB,
-               let relB = arViewModel.puttRelative(boundaryB),
-               let centimetersB = arViewModel.aimOffsetCentimeters(relB) {
-                Text("Boundary B: 홀컵 기준 \(String(format: "%+.1f", centimetersB))cm 조준")
-                    .font(.caption2)
-                    .foregroundColor(boundaryBColor)
-            }
-        }
     }
 
     private var aimDescription: String? {
@@ -354,5 +262,86 @@ struct ZoomCornerControl: View {
                 }
         )
         .animation(.easeInOut(duration: 0.2), value: isDragging)
+    }
+}
+
+struct SettingsSheetView: View {
+    @ObservedObject var arViewModel: ARViewModel
+    @Binding var showResults: Bool
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("스팀프미터") {
+                    HStack {
+                        Button(action: { arViewModel.stimpReading = max(1.5, arViewModel.stimpReading - 0.1) }) {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        Text("Stimpmeter: \(arViewModel.stimpReading, specifier: "%.2f")m")
+                        Button(action: { arViewModel.stimpReading = min(4.0, arViewModel.stimpReading + 0.1) }) {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                    }
+                }
+
+                Section {
+                    DisclosureGroup("고급: 두 솔버 비교", isExpanded: $showResults) {
+                        if let distance = arViewModel.ballToHoleDistance {
+                            VStack(alignment: .leading) {
+                                Text("거리: \(distance, specifier: "%.2f")m")
+
+                                if let combinedMs = arViewModel.rangeFinderElapsedMs, let backwardMs = arViewModel.backwardOnlyElapsedMs {
+                                    Text("소요시간 — 백+포워드: \(combinedMs, specifier: "%.1f")ms / 백워드 전용: \(backwardMs, specifier: "%.1f")ms")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Text("[백+포워드] 유효 방향: \(arViewModel.rangeFinderSolutions.count)개")
+                                    .font(.caption2.bold())
+                                ForEach(Array(arViewModel.rangeFinderSolutions.enumerated()), id: \.offset) { _, solution in
+                                    solutionRows(solution, boundaryAColor: .red, boundaryBColor: .green)
+                                }
+
+                                Text("[백워드 전용] 유효 방향: \(arViewModel.backwardOnlySolutions.count)개")
+                                    .font(.caption2.bold())
+                                    .padding(.top, 4)
+                                ForEach(Array(arViewModel.backwardOnlySolutions.enumerated()), id: \.offset) { _, solution in
+                                    solutionRows(solution, boundaryAColor: .blue, boundaryBColor: .orange)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("설정")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    @ViewBuilder
+    private func solutionRows(_ solution: PuttSolution, boundaryAColor: Color, boundaryBColor: Color) -> some View {
+        if let rel = arViewModel.puttRelative(solution.direction) {
+            let aimLine: String = {
+                guard let centimeters = arViewModel.aimOffsetCentimeters(rel) else { return "" }
+                return " / 홀컵 기준 \(String(format: "%+.1f", centimeters))cm"
+            }()
+            Text("speed \(solution.speed, specifier: "%.2f") / 우: \(rel.right, specifier: "%.2f") 전진: \(rel.forward, specifier: "%.2f")\(aimLine)")
+                .font(.caption2)
+
+            if let boundaryA = solution.directionBoundaryA,
+               let relA = arViewModel.puttRelative(boundaryA),
+               let centimetersA = arViewModel.aimOffsetCentimeters(relA) {
+                Text("Boundary A: 홀컵 기준 \(String(format: "%+.1f", centimetersA))cm 조준")
+                    .font(.caption2)
+                    .foregroundColor(boundaryAColor)
+            }
+            if let boundaryB = solution.directionBoundaryB,
+               let relB = arViewModel.puttRelative(boundaryB),
+               let centimetersB = arViewModel.aimOffsetCentimeters(relB) {
+                Text("Boundary B: 홀컵 기준 \(String(format: "%+.1f", centimetersB))cm 조준")
+                    .font(.caption2)
+                    .foregroundColor(boundaryBColor)
+            }
+        }
     }
 }
