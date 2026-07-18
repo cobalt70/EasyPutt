@@ -10,7 +10,7 @@ import RealityKit
 import ARKit
 import simd
 
-struct ContentView2: View {
+struct ContentView: View {
     @StateObject var arViewModel = ARViewModel()
     @State private var showResults = false
     @State private var showNormalsList = false
@@ -274,7 +274,7 @@ struct ContentView2: View {
 }
 
 #Preview {
-    ContentView2()
+    ContentView()
 }
 
 struct ActionButton: View {
