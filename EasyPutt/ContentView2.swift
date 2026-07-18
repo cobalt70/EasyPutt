@@ -14,7 +14,7 @@ struct ContentView2: View {
     @StateObject var arViewModel = ARViewModel()
     @State private var showResults = false
     @State private var showNormalsList = false
-    @State private var gridSpacingAtGestureStart: Float = 40
+    @State private var gridSpacingAtGestureStart: Float = 60
 
     var body: some View {
         ZStack {

@@ -27,7 +27,7 @@ class ARViewModel : ObservableObject{
     var isCollectingTerrainSamples: Bool = false
     /// 화면에 보여줄 3x3 조준 격자선의 칸 크기(포인트) — 순전히 시각적 가이드이며,
     /// 실제 수집 지점(화면 중앙)에는 영향을 주지 않는다.
-    @Published var terrainSampleGridSpacing: Float = 40
+    @Published var terrainSampleGridSpacing: Float = 60
     /// 새 수집을 실행하려면 조준 지점이 "지금까지의 모든 수집 지점"으로부터
     /// 최소 이만큼(미터) 떨어져 있어야 한다 — 제자리 정체나 경로가 교차할 때
     /// 중복 수집을 막는다. 실제로는 매 틱 gridCellMeters(격자 한 칸의 실제 거리)를

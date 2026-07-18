@@ -229,19 +229,38 @@ final class PuttRangeFinder {
             let ball = GolfBall(initialPosition: holePosition, initialVelocity: direction * crossingSpeed)
             ball.rollingResistance = config.rollingResistance
             var path: [simd_float3] = [holePosition]
+            var previousPosition = holePosition
+            var previousProgress: Float = 0
 
             for step in 0..<config.maxBackwardSteps {
                 guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
                 ball.updateFromTorque(deltaTime: -config.deltaTime, surfaceNormal: normal)
+
+                // 이번 스텝이 그린 실제 경로(직전~다음 위치) 선분이 공 위치에서 0.5cm 이내로
+                // 지나가면, 그 선분 위 최근접점에서 공을 직접 맞힌 것으로 본다 — 공의 출발선
+                // (무한선) 교차만 보는 것보다 더 엄밀한 판정이다.
+                let (closestToBall, distanceToBall) = closestHorizontalPoint(from: previousPosition, to: ball.position, target: ballPosition)
+                if distanceToBall <= 0.005 {
+                    path.append(closestToBall)
+                    return BackwardTrace(angle: angle, crossingPosition: closestToBall, velocity: ball.velocity, path: path)
+                }
 
                 let progress = simd_dot(
                     simd_float3(ball.position.x - holePosition.x, 0, ball.position.z - holePosition.z),
                     toBallUnit
                 )
                 if progress >= ballAxisDistance {
-                    path.append(ball.position)
-                    return BackwardTrace(angle: angle, crossingPosition: ball.position, velocity: ball.velocity, path: path)
+                    // 스텝 한 번에 선을 훌쩍 넘어버릴 수 있으니(각도가 클수록 전진 속도 성분이
+                    // 작아 이런 일이 덜하지만, 그래도) 직전~다음 위치 사이를 선형보간해서
+                    // 정확히 진행거리가 ballAxisDistance가 되는 지점을 구한다.
+                    let denominator = progress - previousProgress
+                    let t = denominator > 0.0001 ? (ballAxisDistance - previousProgress) / denominator : 1
+                    let crossingPosition = previousPosition + (ball.position - previousPosition) * max(0, min(1, t))
+                    path.append(crossingPosition)
+                    return BackwardTrace(angle: angle, crossingPosition: crossingPosition, velocity: ball.velocity, path: path)
                 }
+                previousPosition = ball.position
+                previousProgress = progress
                 if step % 5 == 0 {
                     path.append(ball.position)
                 }
@@ -269,9 +288,9 @@ final class PuttRangeFinder {
                 print("[백워드전용] target=\(target): \(startAngle * 180 / .pi)도(시작점) 추적 실패")
                 return nil
             }
-            // 수렴 허용치를 2.5cm로 느슨하게 잡는다 — 어차피 captureRadius(3.3cm) 자체가
-            // 보수적인 근사치라, 굳이 mm 단위까지 이분탐색을 더 돌릴 필요가 없다.
-            if abs(baseOffset) < 0.025 { return baseTrace }
+            // 수렴 허용치는 0.5cm — 선분-원 교차 판정(위 closestHorizontalPoint 체크)이
+            // 이미 정밀하게 잡아주므로, 이 지름길 체크도 정확도를 우선한다.
+            if abs(baseOffset) < 0.005 { return baseTrace }
 
             // 속도 벡터를 +각도로 돌리면 rightAxis 쪽으로 기울지만, dt<0(역방향 적분)라
             // 실제 위치 이동은 속도의 반대 방향이라 결과 경로는 -rightAxis(반대쪽)로 휜다.
@@ -427,25 +446,27 @@ final class PuttRangeFinder {
         var closestPosition = ballPosition
         var closestDistance = horizontalDistance(ballPosition, holePosition)
         var path: [simd_float3] = [ballPosition]
+        var previousPosition = ballPosition
 
         for step in 0..<config.maxForwardSteps {
             guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
             ball.updateFromTorque(deltaTime: config.deltaTime, surfaceNormal: normal)
 
-            let distance = horizontalDistance(ball.position, holePosition)
+            // 스텝 끝점만 보지 않고, 직전~다음 위치를 잇는 선분 전체에서 홀컵까지의 최소
+            // 거리를 본다 — 안 그러면 빠른 공이 좁은 홀컵 반경(3.3cm)을 두 샘플 사이에서
+            // 그냥 지나쳐버려도 "홀인했는데 못 잡는" 경우가 생긴다.
+            let (closestOnSegment, distance) = closestHorizontalPoint(from: previousPosition, to: ball.position, target: holePosition)
             if distance < closestDistance {
                 closestDistance = distance
-                closestPosition = ball.position
+                closestPosition = closestOnSegment
             }
 
-            // 홀 반경 안에 들어온 순간 그 지점에서 즉시 끊는다 — 매 스텝(5스텝마다가
-            // 아니라)마다 확인해야 한다, 안 그러면 빠른 공이 좁은 홀컵 반경(3.3cm)을
-            // 두 샘플 사이에 그냥 지나쳐서 "홀인했는데 못 자르는" 경우가 생긴다.
             if distance <= config.captureRadius {
-                path.append(ball.position)
+                path.append(closestOnSegment)
                 break
             }
 
+            previousPosition = ball.position
             if step % 5 == 0 {
                 path.append(ball.position)
             }
@@ -488,5 +509,22 @@ final class PuttRangeFinder {
 
     private func horizontalDistance(_ a: simd_float3, _ b: simd_float3) -> Float {
         simd_distance(simd_float3(a.x, 0, a.z), simd_float3(b.x, 0, b.z))
+    }
+
+    /// 선분(a→b) 위에서 target에 가장 가까운 점과 그 수평(X,Z) 거리를 반환한다 —
+    /// 매 스텝 끝점만 확인하면 그 사이(선분 중간)에서 목표를 스쳐 지나가는 경우를
+    /// 놓칠 수 있어, forward 캡처 판정과 백워드 도달 판정 둘 다 이 방식을 쓴다.
+    private func closestHorizontalPoint(from a: simd_float3, to b: simd_float3, target: simd_float3) -> (point: simd_float3, distance: Float) {
+        let abHorizontal = simd_float2(b.x - a.x, b.z - a.z)
+        let lengthSquared = simd_dot(abHorizontal, abHorizontal)
+        let t: Float
+        if lengthSquared > 0.0001 {
+            let atHorizontal = simd_float2(target.x - a.x, target.z - a.z)
+            t = max(0, min(1, simd_dot(atHorizontal, abHorizontal) / lengthSquared))
+        } else {
+            t = 0
+        }
+        let closest = a + (b - a) * t
+        return (closest, horizontalDistance(closest, target))
     }
 }
