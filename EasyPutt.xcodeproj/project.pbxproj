@@ -436,6 +436,7 @@
 				"FRAMEWORK_SEARCH_PATHS[arch=*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is required for usage";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "화면 스냅샷을 사진 앱에 저장하기 위해 필요합니다";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
 				INFOPLIST_KEY_UIRequiredDeviceCapabilities = arkit;
@@ -469,6 +470,7 @@
 				"FRAMEWORK_SEARCH_PATHS[arch=*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is required for usage";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "화면 스냅샷을 사진 앱에 저장하기 위해 필요합니다";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
 				INFOPLIST_KEY_UIRequiredDeviceCapabilities = arkit;

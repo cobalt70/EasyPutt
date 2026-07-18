@@ -328,10 +328,11 @@ func drawTrajectories(_ solutions: [PuttSolution], backwardOnlySolutions: [PuttS
         let anchor = AnchorEntity(world: .zero)
         anchor.name = "TrajectoryAnchor"
 
+        // 백+포워드 선을 백워드 전용보다 살짝 두껍게(1px 정도) 그려서 구분이 잘 되게 한다.
         for solution in solutions {
-            let aEntity = makeTrajectoryEntity(path: solution.boundaryAPath, color: .systemRed, radius: 0.0025)
+            let aEntity = makeTrajectoryEntity(path: solution.boundaryAPath, color: .systemRed, radius: 0.003)
             anchor.addChild(aEntity)
-            let bEntity = makeTrajectoryEntity(path: solution.boundaryBPath, color: .systemGreen, radius: 0.0025)
+            let bEntity = makeTrajectoryEntity(path: solution.boundaryBPath, color: .systemGreen, radius: 0.003)
             anchor.addChild(bEntity)
         }
 

@@ -18,10 +18,12 @@ struct ContentView2: View {
 
     var body: some View {
         ZStack {
-            // AR 배경
+            // AR 배경 — displayZoom만큼 화면 콘텐츠를 그대로 확대해서 보여준다(디지털 줌,
+            // 실제 카메라/트래킹은 그대로). UI 컨트롤들은 이 스케일 밖에 있어서 안 커진다.
             ARViewContainer()
                 .environmentObject(arViewModel)
                 .edgesIgnoringSafeArea(.all)
+                .scaleEffect(CGFloat(arViewModel.displayZoom))
 
             // 화면 중앙 조준 아이콘 (볼/홀 캡처 대상 지점)
             if arViewModel.holePosition == nil {
@@ -88,6 +90,23 @@ struct ContentView2: View {
                         Text("실제 거리: \(distance, specifier: "%.2f")m / 평지 환산: \(adjusted, specifier: "%.2f")m")
                             .font(.caption2)
                             .foregroundColor(.white)
+                    }
+                    HStack {
+                        Button(action: { arViewModel.zoomOut() }) {
+                            Image(systemName: "minus.magnifyingglass")
+                        }
+                        Text("확대: \(arViewModel.displayZoom, specifier: "%.1f")x")
+                            .font(.caption2)
+                            .padding(4)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(8)
+                        Button(action: { arViewModel.zoomIn() }) {
+                            Image(systemName: "plus.magnifyingglass")
+                        }
+                        Button(action: { arViewModel.saveSnapshot() }) {
+                            Image(systemName: "camera.fill")
+                        }
+                        .padding(.leading, 8)
                     }
                 }
                 .padding(8)
@@ -230,26 +249,23 @@ struct ContentView2: View {
     private func solutionRows(_ solution: PuttSolution, boundaryAColor: Color, boundaryBColor: Color) -> some View {
         if let rel = arViewModel.puttRelative(solution.direction) {
             let aimLine: String = {
-                guard let inches = arViewModel.aimOffsetInches(rel) else { return "" }
-                let side = inches >= 0 ? "오른쪽" : "왼쪽"
-                return " / 홀컵 기준 \(side) \(String(format: "%.1f", abs(inches)))in"
+                guard let centimeters = arViewModel.aimOffsetCentimeters(rel) else { return "" }
+                return " / 홀컵 기준 \(String(format: "%+.1f", centimeters))cm"
             }()
             Text("speed \(solution.speed, specifier: "%.2f") / 우: \(rel.right, specifier: "%.2f") 전진: \(rel.forward, specifier: "%.2f")\(aimLine)")
                 .font(.caption2)
 
             if let boundaryA = solution.directionBoundaryA,
                let relA = arViewModel.puttRelative(boundaryA),
-               let inchesA = arViewModel.aimOffsetInches(relA) {
-                let side = inchesA >= 0 ? "오른쪽" : "왼쪽"
-                Text("Boundary A: 홀컵 기준 \(side) \(String(format: "%.1f", abs(inchesA)))in 조준")
+               let centimetersA = arViewModel.aimOffsetCentimeters(relA) {
+                Text("Boundary A: 홀컵 기준 \(String(format: "%+.1f", centimetersA))cm 조준")
                     .font(.caption2)
                     .foregroundColor(boundaryAColor)
             }
             if let boundaryB = solution.directionBoundaryB,
                let relB = arViewModel.puttRelative(boundaryB),
-               let inchesB = arViewModel.aimOffsetInches(relB) {
-                let side = inchesB >= 0 ? "오른쪽" : "왼쪽"
-                Text("Boundary B: 홀컵 기준 \(side) \(String(format: "%.1f", abs(inchesB)))in 조준")
+               let centimetersB = arViewModel.aimOffsetCentimeters(relB) {
+                Text("Boundary B: 홀컵 기준 \(String(format: "%+.1f", centimetersB))cm 조준")
                     .font(.caption2)
                     .foregroundColor(boundaryBColor)
             }

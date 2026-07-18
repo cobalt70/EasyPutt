@@ -14,9 +14,8 @@ struct PuttSolution {
     /// 근사 후보나 verify()의 중간 보정 후보에는 채워지지 않는다(빈 배열).
     var path: [simd_float3] = []
     /// 같은 속도(speed)는 유지한 채 방향(좌우 각도)만 틀어도 여전히 홀에 들어가는
-    /// 각도 범위의 두 경계 방향벡터. findSolutions()에서 directionRange(...)로
-    /// 채워지며, 어느 쪽이 "왼쪽"/"오른쪽"인지는 puttRelative()로 판단해야 한다
-    /// (여기선 그냥 두 경계일 뿐, 순서가 좌/우를 의미하지 않는다).
+    /// 각도 범위의 두 경계 방향벡터 — directionBoundaryA는 항상 왼쪽(더 작은/음수 쪽),
+    /// directionBoundaryB는 항상 오른쪽(더 큰/양수 쪽)이다(puttRelative() 기준).
     var directionBoundaryA: simd_float3?
     var directionBoundaryB: simd_float3?
     /// directionBoundaryA/B 방향으로 쳤을 때의 정방향 시뮬레이션 경로 — 시각화에서
@@ -34,8 +33,12 @@ struct PuttRangeFinderConfig {
     var deltaTime: Float = 0.01
     var maxBackwardSteps: Int = 1000
     var maxForwardSteps: Int = 1000
-    /// 홀인으로 판정하는 최대 허용 오차 — 홀컵 반경(≈5.4cm) - 공 반지름(2.135cm).
-    var captureRadius: Float = 0.033
+    /// 홀인으로 판정하는 최대 허용 오차 — 홀컵 반경(≈5.4cm) 그 자체. 공 전체가 완전히
+    /// 홀 위에 떠야(반경-공반지름) 캡처된다고 보는 건 틀렸다 — 공의 무게중심이 홀 반경
+    /// 안(허공 위)으로 들어오는 순간, 가장자리 일부가 아직 테두리에 걸쳐있어도 그 접촉은
+    /// 무게를 못 버티고 중력에 져서 기울며 떨어진다. 그러니까 지지를 잃는 기준은 공
+    /// 중심이 홀 반경 안으로 들어오는 시점 그 자체다.
+    var captureRadius: Float = 0.054
     /// 홀컵을 놓쳤을 때 이 정도만 지나쳐서 멈추는 세기(다잉 퍼팅)를 목표로 삼는다.
     /// 실제 골프에서 흔히 말하는 "10~30cm 지나치는 세기"의 중간값.
     var targetOverrunDistance: Float = 0.2
@@ -141,30 +144,28 @@ final class PuttRangeFinder {
         return nil
     }
 
-    /// 여러 홀컵 통과속도를 스윕하며 백워드 후보를 만들고, 각 후보를 검증해서
-    /// 캡처 반경 이내로 수렴하는 (direction, speed) 조합들을 모두 반환한다.
-    /// 성공하는 방향들이 하나의 연속 구간이 아니라 여러 구간으로 나올 수 있으므로,
-    /// 병합하지 않고 있는 그대로 반환한다.
+    /// 백워드 전용 탐색(backwardOnlySolve)이 구한 해를 시드로 삼아, forward 시뮬레이션으로
+    /// 검증/보정한다 — B(백워드 전용 탐색)와 B+F(이 함수)가 "초기 해를 찾는 방식과 가정"을
+    /// 공유하도록 통일했다: B는 그 탐색 결과를 그대로 쓰고, B+F는 같은 결과를 시작점 삼아
+    /// forward 보정만 얹는다. 예전에는 backwardCandidate()의 단순 추측(최대경사 또는 직선,
+    /// 단일 시도)을 시드로 썼는데, 이제 B 쪽에서 이미 검증한(양방향 탐색 + 데드존 안전) 훨씬
+    /// 정확한 시드를 그대로 재사용하므로 verify()가 처리해야 할 보정량도 줄어든다.
     func findSolutions(ballPosition: simd_float3, holePosition: simd_float3) -> [PuttSolution] {
         var solutions: [PuttSolution] = []
-        for crossingSpeed in config.holeCrossingSpeeds {
-            guard let candidate = backwardCandidate(
-                holePosition: holePosition,
-                ballPosition: ballPosition,
-                holeCrossingSpeed: crossingSpeed
-            ) else { continue }
+        guard let candidate = backwardOnlySolve(ballPosition: ballPosition, holePosition: holePosition) else {
+            return solutions
+        }
 
-            if var verified = verify(candidate, ballPosition: ballPosition, holePosition: holePosition) {
-                if let range = directionRange(for: verified, ballPosition: ballPosition, holePosition: holePosition) {
-                    verified.directionBoundaryA = range.a
-                    verified.directionBoundaryB = range.b
-                    let boundaryA = PuttSolution(direction: range.a, speed: verified.speed)
-                    let boundaryB = PuttSolution(direction: range.b, speed: verified.speed)
-                    verified.boundaryAPath = simulateForward(boundaryA, from: ballPosition, holePosition: holePosition)?.path ?? []
-                    verified.boundaryBPath = simulateForward(boundaryB, from: ballPosition, holePosition: holePosition)?.path ?? []
-                }
-                solutions.append(verified)
+        if var verified = verify(candidate, ballPosition: ballPosition, holePosition: holePosition) {
+            if let range = directionRange(for: verified, ballPosition: ballPosition, holePosition: holePosition) {
+                verified.directionBoundaryA = range.a
+                verified.directionBoundaryB = range.b
+                let boundaryA = PuttSolution(direction: range.a, speed: verified.speed)
+                let boundaryB = PuttSolution(direction: range.b, speed: verified.speed)
+                verified.boundaryAPath = simulateForward(boundaryA, from: ballPosition, holePosition: holePosition)?.path ?? []
+                verified.boundaryBPath = simulateForward(boundaryB, from: ballPosition, holePosition: holePosition)?.path ?? []
             }
+            solutions.append(verified)
         }
         return solutions
     }
@@ -173,16 +174,8 @@ final class PuttRangeFinder {
     /// 해와 좌우 범위를 직접 구한다. holeCrossingSpeeds 각각에 대해 backwardOnlySolve를
     /// 호출한다 — findSolutions()와 대응되는 "백워드 전용" 버전.
     func findSolutionsBackwardOnly(ballPosition: simd_float3, holePosition: simd_float3) -> [PuttSolution] {
-        var solutions: [PuttSolution] = []
-        for crossingSpeed in config.holeCrossingSpeeds {
-            guard let solution = backwardOnlySolve(
-                ballPosition: ballPosition,
-                holePosition: holePosition,
-                crossingSpeed: crossingSpeed
-            ) else { continue }
-            solutions.append(solution)
-        }
-        return solutions
+        guard let solution = backwardOnlySolve(ballPosition: ballPosition, holePosition: holePosition) else { return [] }
+        return [solution]
     }
 
     /// 홀→공 직선을 탐색 기준각(0도)으로 삼는다. 각 테스트 각도로 홀에서 백워드 추적해
@@ -199,7 +192,6 @@ final class PuttRangeFinder {
     private func backwardOnlySolve(
         ballPosition: simd_float3,
         holePosition: simd_float3,
-        crossingSpeed: Float,
         coarseAngleStep: Float = (Float.pi / 180) * 1.0,
         // 60도까지만 훑는다 — backwardCandidate가 이미 쓰는 naturalDirectionAlignmentThreshold
         // (cos 60도)와 같은 한계다. 60도 근처는 전진 속도 성분이 작아(cos60°=0.5) maxBackwardSteps
@@ -207,8 +199,6 @@ final class PuttRangeFinder {
         maxCoarseSteps: Int = 60,
         bisectionIterations: Int = 24
     ) -> PuttSolution? {
-        guard crossingSpeed > 0 else { return nil }
-
         let toBall = ballPosition - holePosition
         let toBallHorizontal = simd_float3(toBall.x, 0, toBall.z)
         let ballAxisDistance = simd_length(toBallHorizontal)
@@ -216,6 +206,12 @@ final class PuttRangeFinder {
         let toBallUnit = toBallHorizontal / ballAxisDistance
         let forwardAxis = -toBallUnit
         let rightAxis = simd_float3(-forwardAxis.z, 0, forwardAxis.x)
+
+        // 홀컵을 지나는 속도가 너무 약하면(overrun 거리가 작으면) 역방향 적분 중 가파른
+        // 지형에서 속도가 죽어 0도조차 공의 출발선에 못 닿을 수 있다 — traceBackward가
+        // 참조하는 crossingSpeed를 var로 두고, 작은 overrun부터 시도하다 중앙 해를 못
+        // 찾으면 더 큰 값(더 센 시작 속도)으로 처음부터 다시(coarse walk 포함) 시도한다.
+        var crossingSpeed: Float = 0
 
         struct BackwardTrace {
             let angle: Float
@@ -264,7 +260,10 @@ final class PuttRangeFinder {
                 if step % 5 == 0 {
                     path.append(ball.position)
                 }
-                if simd_length(ball.velocity) < 0.0001 { return nil }
+                // 0.0001(사실상 정확히 0)보다 넉넉하게 잡는다 — 그 근처의 아주 작은 속도는
+                // 방향이 부동소수점 오차에 지배돼 더 이상 물리적으로 의미가 없으니, 그런
+                // 상태로 계속 적분하느니 여기서 깔끔하게 "이 각도는 안 됨"으로 처리한다.
+                if simd_length(ball.velocity) < 0.005 { return nil }
             }
             return nil
         }
@@ -284,57 +283,143 @@ final class PuttRangeFinder {
         // 이미 정답 근처라는 걸 알고 있으니 거기서부터 살짝만 더 틀어보면 된다
         // (directionRange가 verify()로 구한 중앙 방향에서부터 경계를 찾아나가는 것과 같은 패턴).
         func solveAngle(target: Float, startAngle: Float = 0) -> BackwardTrace? {
-            guard let (baseOffset, baseTrace) = offset(at: startAngle, target: target) else {
-                print("[백워드전용] target=\(target): \(startAngle * 180 / .pi)도(시작점) 추적 실패")
-                return nil
+            // startAngle 자체가(가파른 지형, 수치오차 등으로) 실패할 수 있다 — 이 경우 곧장
+            // 포기하지 않고 양쪽으로 coarseAngleStep씩 넓혀가며 "처음으로 성공하는 각도"를
+            // 찾는다. directionRange의 captures()가 실패를 "이 각도는 안 됨"으로만 처리하고
+            // 탐색을 계속하는 것과 같은 원리 — 시작점 하나의 실패가 전체 탐색을 막으면 안 된다.
+            var probeAngle = startAngle
+            var probeOffset: Float
+            var probeTrace: BackwardTrace
+            if let (value, trace) = offset(at: startAngle, target: target) {
+                probeOffset = value
+                probeTrace = trace
+            } else {
+                var found: (angle: Float, value: Float, trace: BackwardTrace)?
+                searchLoop: for step in 1...maxCoarseSteps {
+                    for sign: Float in [1, -1] {
+                        let angle = startAngle + sign * coarseAngleStep * Float(step)
+                        if let (value, trace) = offset(at: angle, target: target) {
+                            found = (angle, value, trace)
+                            break searchLoop
+                        }
+                    }
+                }
+                guard let found else {
+                    print("[백워드전용] target=\(target): \(startAngle * 180 / .pi)도 근방 \(maxCoarseSteps)도 범위 안에서 유효한 추적을 하나도 못 찾음")
+                    return nil
+                }
+                print("[백워드전용] target=\(target): \(startAngle * 180 / .pi)도 실패, \(found.angle * 180 / .pi)도에서 첫 성공")
+                probeAngle = found.angle
+                probeOffset = found.value
+                probeTrace = found.trace
             }
+
             // 수렴 허용치는 0.5cm — 선분-원 교차 판정(위 closestHorizontalPoint 체크)이
             // 이미 정밀하게 잡아주므로, 이 지름길 체크도 정확도를 우선한다.
-            if abs(baseOffset) < 0.005 { return baseTrace }
+            if abs(probeOffset) < 0.005 { return probeTrace }
 
-            // 속도 벡터를 +각도로 돌리면 rightAxis 쪽으로 기울지만, dt<0(역방향 적분)라
-            // 실제 위치 이동은 속도의 반대 방향이라 결과 경로는 -rightAxis(반대쪽)로 휜다.
-            // 그래서 baseOffset이 +(공 기준 오른쪽으로 빗나감)이면 그걸 줄이기 위해
-            // +각도 쪽으로 걸어가야 한다(그 반대가 아니라).
-            let searchSign: Float = baseOffset > 0 ? 1 : -1
-            var lowAngle: Float = startAngle
-            var highAngle: Float?
-            let lowIsPositive = baseOffset > 0
+            // 오프셋 부호만 보고 "이 방향으로 가면 뒤집힐 것"이라고 한쪽에 베팅하지 않는다 —
+            // 그 가정(단조성)이 지형에 따라 틀릴 수 있고, 틀리면 진짜 해가 있는 반대쪽은
+            // 아예 시도도 안 해보고 끝나버린다. 그래서 양쪽 방향을 번갈아 동시에 걸어가며
+            // 어느 쪽이든 먼저 부호가 뒤집히는 지점을 쓴다.
+            let lowIsPositive = probeOffset > 0
+            // 각도뿐 아니라 그때의 offset값과 trace까지 같이 들고 있어야, 이분탐색이
+            // 데드존(추적 실패 각도들)에 막혀도 이미 확인된 low를 재추적 없이 쓸 수 있다.
+            var lastGood: [Float: (angle: Float, value: Float, trace: BackwardTrace)] = [
+                1: (probeAngle, probeOffset, probeTrace),
+                -1: (probeAngle, probeOffset, probeTrace)
+            ]
+            var bracket: (angle: Float, value: Float, trace: BackwardTrace)?
+            var bracketSign: Float = 1
 
-            for step in 1...maxCoarseSteps {
-                let angle = startAngle + searchSign * coarseAngleStep * Float(step)
-                guard let (value, _) = offset(at: angle, target: target) else {
-                    print("[백워드전용] target=\(target): \(angle * 180 / .pi)도에서 추적 끊김, 그 전까지만 탐색")
-                    break
+            searchLoop: for step in 1...maxCoarseSteps {
+                for sign: Float in [1, -1] {
+                    let angle = probeAngle + sign * coarseAngleStep * Float(step)
+                    guard let (value, trace) = offset(at: angle, target: target) else {
+                        continue // 이 방향은 여기서 끊겼을 뿐, 반대 방향은 계속 유효할 수 있다
+                    }
+                    if (value > 0) != lowIsPositive {
+                        bracket = (angle, value, trace)
+                        bracketSign = sign
+                        break searchLoop
+                    }
+                    lastGood[sign] = (angle, value, trace)
                 }
-                if (value > 0) != lowIsPositive {
-                    highAngle = angle
-                    break
-                }
-                lowAngle = angle
             }
 
-            guard var high = highAngle else {
-                print("[백워드전용] target=\(target): \(startAngle * 180 / .pi)도에서 \(maxCoarseSteps)도 안에 부호 반전 못 찾음(브라켓 실패)")
+            guard let bracket else {
+                print("[백워드전용] target=\(target): \(probeAngle * 180 / .pi)도 기준 양쪽 \(maxCoarseSteps)도 안에 부호 반전 못 찾음(브라켓 실패)")
                 return nil
             }
-            var low = lowAngle
-            var bestTrace: BackwardTrace?
 
+            let lowSeed = lastGood[bracketSign] ?? (probeAngle, probeOffset, probeTrace)
+            var low = lowSeed.angle
+            var high = bracket.angle
+
+            // 이분탐색이 중간에 데드존을 만나 high 쪽이 미확정 값으로 잠식되더라도, 이미
+            // 확인된 것 중 가장 좋은(|offset|이 가장 작은) 표본보다 나쁜 답은 절대 반환하지
+            // 않는다 — bracket 자체가 확정된 해이므로 최소한 이걸로 시작한다.
+            var bestTrace = bracket.trace
+            var bestOffset = abs(bracket.value)
+            if abs(lowSeed.value) < bestOffset {
+                bestOffset = abs(lowSeed.value)
+                bestTrace = lowSeed.trace
+            }
+
+            var deadZoneHits = 0
             for _ in 0..<bisectionIterations {
                 let mid = (low + high) / 2
-                guard let (value, trace) = offset(at: mid, target: target) else { return bestTrace }
-                bestTrace = trace
-                if (value > 0) == lowIsPositive {
-                    low = mid
+                if let (value, trace) = offset(at: mid, target: target) {
+                    if abs(value) < bestOffset {
+                        bestOffset = abs(value)
+                        bestTrace = trace
+                    }
+                    if (value > 0) == lowIsPositive {
+                        low = mid
+                    } else {
+                        high = mid
+                    }
                 } else {
+                    // 확정 안 된 지점은 directionRange의 captures()가 실패를 "캡처 안 됨"으로
+                    // 접는 것과 같은 원리로, 안전한 쪽(high 잠식)으로 접어서 계속 좁혀간다.
+                    deadZoneHits += 1
                     high = mid
                 }
+            }
+            if deadZoneHits > 0 {
+                print("[백워드전용] target=\(target): 이분탐색 중 \(deadZoneHits)번 데드존(추적 실패)과 마주침 — 최종 \(bestTrace.angle * 180 / .pi)도(|offset|=\(bestOffset))로 수렴")
             }
             return bestTrace
         }
 
-        guard let center = solveAngle(target: 0) else { return nil }
+        // bestTrace는 "데드존을 만나도 절대 나빠지지 않는다"만 보장할 뿐, "충분히 정확하다"는
+        // 보장은 아니다 — 데드존이 브라켓 전체를 거의 다 잠식하면 coarseAngleStep 수준의 거친
+        // 정밀도로 남을 수 있다. 그런데 bestOffset(공 쪽 오차)이 홀 쪽 오차로 정확히 얼마나
+        // 옮겨가는지는 지형마다 달라서 간접 추정이 부정확하다 — 대신 후보를 찾을 때마다
+        // forward 시뮬레이션을 딱 한 번 돌려서 실제로 캡처 반경 안에 들어오는지 직접
+        // 확인한다(verify()가 쓰는 것과 같은 진짜 판정 기준). 반복 보정이 아니라 최종
+        // 검증 한 번이므로 "백워드 전용은 forward 시뮬레이션을 안 쓴다"는 원칙은 유지된다.
+        let overrunCandidates: [Float] = [0.2, 0.3, 0.4, 0.5]
+        var center: BackwardTrace?
+        for overrun in overrunCandidates {
+            crossingSpeed = (2 * config.rollingResistance * overrun).squareRoot()
+            guard crossingSpeed > 0.0001 else { continue }
+            guard let found = solveAngle(target: 0) else {
+                print("[백워드전용] overrun=\(overrun)m(crossingSpeed=\(crossingSpeed)) 중앙해 실패, 더 큰 값으로 재시도")
+                continue
+            }
+            let foundSpeed = simd_length(found.velocity)
+            guard foundSpeed > 0.0001 else { continue }
+            let candidate = PuttSolution(direction: found.velocity / foundSpeed, speed: foundSpeed)
+            guard let verification = simulateForward(candidate, from: ballPosition, holePosition: holePosition),
+                  verification.closestDistance <= config.captureRadius else {
+                print("[백워드전용] overrun=\(overrun)m: 중앙해는 찾았지만 forward 검증 실패(홀과 최근접 거리가 캡처 반경 밖) — 더 큰 값으로 재시도")
+                continue
+            }
+            center = found
+            break
+        }
+        guard let center else { return nil }
         let speed = simd_length(center.velocity)
         guard speed > 0.0001 else { return nil }
 
@@ -344,40 +429,34 @@ final class PuttRangeFinder {
             path: center.path.reversed()
         )
 
-        // 경계는 추가 시뮬레이션 없이 순수 기하로 구한다 — 3cm만큼 옆으로 비켜나는 데 필요한
-        // 각도를 작은각 근사(atan(3cm/거리))로 구해서, 중앙 해의 최종 방향벡터를 그만큼
-        // 회전시킨 게 곧 경계 방향이다(중앙해 자체도 2.5cm 허용치로 느슨하게 구했으니, 굳이
-        // captureRadius(3.3cm) 정밀값을 쓸 필요 없이 3cm로 반올림해도 오차는 무시할 만하다).
-        // 백워드 추적을 또 돌리는 것보다 훨씬 빠르고, 시각화 경로도 실제 궤적 대신 공→그
-        // 방향으로 뻗은 직선으로 대체한다(공→홀 거리만큼).
-        let boundaryShiftDistance: Float = 0.03
-        let boundaryAngleOffset = atan(boundaryShiftDistance / ballAxisDistance)
+        // 경계는 추가 시뮬레이션 없이 순수 기하로 구한다 — captureRadius만큼 옆으로 비켜나는
+        // 데 필요한 각도를 작은각 근사(atan(captureRadius/거리))로 구해서, 중앙 해의 최종
+        // 방향벡터를 그만큼 회전시킨 게 곧 경계 방향이다. 하드코딩된 값을 따로 두지 않고
+        // config.captureRadius를 그대로 참조해야, 그 값이 바뀌어도(예: 5.4cm로 재조정) 여기도
+        // 같이 맞게 따라간다.
+        let boundaryAngleOffset = atan(config.captureRadius / ballAxisDistance)
         let centerDirection = solution.direction
 
-        // 시각화용 직선의 도착점은 방향벡터의 수직(Y) 성분을 그대로 안 쓴다 — 경사를 타고
-        // 백워드 추적된 방향엔 자연스럽게 위/아래로 기운 성분이 섞여 있어서, 그걸 그대로
-        // ballAxisDistance(수평 거리)만큼 늘리면 실제 지면보다 훨씬 위(또는 아래)로 치솟는
-        // 선이 그려진다. 수평 성분만으로 정확히 홀까지의 수평거리를 스케일하고, 높이는
-        // 그 (X,Z) 지점에서 가장 가까운 지형 샘플의 실제 높이를 찾아 쓴다(terrain.nearestPosition —
-        // 공의 실제 이동을 지배하는 것과 같은 원리: 높이 차이는 배제하고 수평 거리로만 최근접
-        // 지형을 찾는다). directionBoundaryA/B(리포트되는 방향값)는 그대로 두고 화면에 그리는
-        // 선의 도착점만 보정하는 것이다.
-        func boundaryPath(direction: simd_float3) -> [simd_float3] {
-            let horizontal = simd_float3(direction.x, 0, direction.z)
-            guard simd_length(horizontal) > 0.0001 else { return [ballPosition, ballPosition] }
-            let horizontalUnit = simd_normalize(horizontal)
-            let endpoint = ballPosition + horizontalUnit * ballAxisDistance
-            let height = terrain.nearestPosition(to: endpoint)?.y ?? holePosition.y
-            return [ballPosition, simd_float3(endpoint.x, height, endpoint.z)]
+        // 시각화 경로는 새로 직선을 그리지 않고, 이미 구해둔 중앙 해의 실제(지형 따라 휘어진)
+        // 경로를 공 위치를 중심으로 그만큼 통째로 회전시켜서 만든다 — 직선으로 새로 그리면
+        // 지형 곡률을 못 따라가서 홀 근처에 안 닿고 계속 벗어나 버리는데, 중앙 경로를 그대로
+        // 회전시키면 같은 곡률을 유지한 채 끝점도 홀 근처(회전 각도만큼만 벗어난 지점)에
+        // 자연스럽게 떨어진다. 높이(Y)도 중앙 경로가 이미 갖고 있던 값 그대로 회전되므로
+        // 추가로 지형을 조회할 필요가 없다.
+        func rotatedPath(by angle: Float) -> [simd_float3] {
+            solution.path.map { point in
+                let relative = point - ballPosition
+                return ballPosition + rotateHorizontal(relative, by: angle)
+            }
         }
 
-        let boundaryADirection = simd_normalize(rotateHorizontal(centerDirection, by: boundaryAngleOffset))
-        solution.directionBoundaryA = boundaryADirection
-        solution.boundaryAPath = boundaryPath(direction: boundaryADirection)
+        // a=왼쪽(더 작은/음수 쪽), b=오른쪽(더 큰/양수 쪽)으로 고정한다 — directionRange와
+        // 같은 규칙.
+        solution.directionBoundaryA = simd_normalize(rotateHorizontal(centerDirection, by: -boundaryAngleOffset))
+        solution.boundaryAPath = rotatedPath(by: -boundaryAngleOffset)
 
-        let boundaryBDirection = simd_normalize(rotateHorizontal(centerDirection, by: -boundaryAngleOffset))
-        solution.directionBoundaryB = boundaryBDirection
-        solution.boundaryBPath = boundaryPath(direction: boundaryBDirection)
+        solution.directionBoundaryB = simd_normalize(rotateHorizontal(centerDirection, by: boundaryAngleOffset))
+        solution.boundaryBPath = rotatedPath(by: boundaryAngleOffset)
 
         return solution
     }
@@ -430,7 +509,9 @@ final class PuttRangeFinder {
             return rotateHorizontal(solution.direction, by: goodAngle)
         }
 
-        return (findBoundary(sign: 1), findBoundary(sign: -1))
+        // a=왼쪽, b=오른쪽으로 고정한다 — sign: -1(왼쪽으로 회전)이 a, sign: 1(오른쪽으로
+        // 회전)이 b.
+        return (findBoundary(sign: -1), findBoundary(sign: 1))
     }
 
     private struct ForwardSimulationResult {

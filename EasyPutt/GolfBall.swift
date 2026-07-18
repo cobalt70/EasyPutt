@@ -43,7 +43,7 @@ class GolfBall: ObservableObject {
         self.rotation = simd_quatf(angle: 0, axis: [0, 1, 0])
     }
     var hasStopped: Bool {
-        simd_length(velocity) < 0.001 &&  simd_length(angularVelocity) < 0.01
+        simd_length(velocity) < 0.005 &&  simd_length(angularVelocity) < 0.01
     }
 
     // 토크 기반 시뮬레이션 (미끄러짐 → 구름으로 전환)

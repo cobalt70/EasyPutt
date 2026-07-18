@@ -10,6 +10,7 @@ import SwiftUI
 import RealityKit
 import simd
 import Foundation
+import UIKit
 class ARViewModel : ObservableObject{
     //static var shared = ARViewModel()
     @Published var arView: ARView?
@@ -42,6 +43,28 @@ class ARViewModel : ObservableObject{
     /// 지금 이 순간, 화면상 격자 한 칸(terrainSampleGridSpacing)이 실제 지면에서
     /// 몇 미터에 해당하는지 — 카메라 거리/각도에 따라 계속 바뀌므로 매 틱 갱신한다.
     @Published var gridCellMeters: Float?
+
+    /// 화면(AR 콘텐츠)을 디지털로 확대해서 보여주는 배율 — 실제 카메라 렌즈나 트래킹은
+    /// 그대로고, 화면에 그려지는 걸 그대로 키워서 보여주는 것뿐이다. 조준 정밀도를 높이려는
+    /// 용도라 스캔이 끝난 뒤(홀 캡처 이후) 주로 쓴다.
+    @Published var displayZoom: Float = 1.0
+    let displayZoomLevels: [Float] = [1.0, 1.5, 2.0, 3.0]
+    func zoomIn() {
+        guard let index = displayZoomLevels.firstIndex(of: displayZoom), index < displayZoomLevels.count - 1 else { return }
+        displayZoom = displayZoomLevels[index + 1]
+    }
+    func zoomOut() {
+        guard let index = displayZoomLevels.firstIndex(of: displayZoom), index > 0 else { return }
+        displayZoom = displayZoomLevels[index - 1]
+    }
+
+    /// 지금 화면(AR 뷰)을 이미지로 캡처해 사진 앱에 저장한다.
+    func saveSnapshot() {
+        arView?.snapshot(saveToHDR: false) { image in
+            guard let image = image else { return }
+            UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+        }
+    }
 
     @Published var ballPosition: simd_float3?
     @Published var holePosition: simd_float3?
@@ -287,13 +310,13 @@ class ARViewModel : ObservableObject{
     }
 
     /// 초기 조준 방향을 직선으로 연장했을 때, 홀컵까지의 거리(forward)만큼 나아간
-    /// 지점이 홀컵 중심에서 좌우로 몇 인치 떨어지는지를 구한다. 실제 궤적은 경사
-    /// 때문에 휘어 들어가지만, 이건 "홀컵 기준 몇 인치 옆을 보고 쳐야 하는지"를
+    /// 지점이 홀컵 중심에서 좌우로 몇 cm 떨어지는지를 구한다. 실제 궤적은 경사
+    /// 때문에 휘어 들어가지만, 이건 "홀컵 기준 몇 cm 옆을 보고 쳐야 하는지"를
     /// 직선 근사로 직관적으로 보여주기 위한 값이다. 상한/하한 없이 계산값 그대로 반환한다.
-    func aimOffsetInches(_ rel: (right: Float, forward: Float)) -> Float? {
+    func aimOffsetCentimeters(_ rel: (right: Float, forward: Float)) -> Float? {
         guard let distance = ballToHoleDistance, rel.forward > 0.0001 else { return nil }
         let lateralMeters = distance * (rel.right / rel.forward)
-        return lateralMeters / 0.0254
+        return lateralMeters * 100
     }
     //arview.session.raycast : 현실세계 감지 arview.makeRaycastQuery 먼저 하고..
     //a arView.raycast(from: center, allowing: .estimatedPlane, alignment: .any).first
