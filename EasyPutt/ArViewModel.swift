@@ -135,8 +135,8 @@ class ARViewModel : ObservableObject{
         self.arView = ARView(frame: .zero)
 
         DispatchQueue.main.async {
-            if let arView =  self.arView {
-                self.focusEntity = FocusEntity(on: arView, style: .colored(onColor: MaterialColorParameter.color(.blue), offColor: MaterialColorParameter.color(.yellow), nonTrackingColor: MaterialColorParameter.color(.green)))
+            if let arView = self.arView {
+                self.focusEntity = FocusEntity(on: arView, style: Self.focusEntityStyle())
             }
         }
 
@@ -410,6 +410,22 @@ class ARViewModel : ObservableObject{
 
 }
 
+extension ARViewModel {
+    /// FocusEntity 스타일 — SF Symbol("plus")을 투명 배경 텍스처로 렌더링해서 리티클이
+    /// 불투명 사각형이 아니라 "+" 모양만 보이게 한다(사각형 안의 실제 골프공이 그대로
+    /// 비침). 텍스처 생성이 실패하면(드묾) 기존 단색 사각형으로 대체한다.
+    static func focusEntityStyle() -> FocusEntityComponent.Style {
+        do {
+            let onTexture = try textureFromSymbol(named: "plus", color: .blue, backgroundColor: .white, backgroundAlpha: 0.0)
+            let offTexture = try textureFromSymbol(named: "plus", color: .yellow, backgroundColor: .white, backgroundAlpha: 0.0)
+            let nonTrackingTexture = try textureFromSymbol(named: "plus", color: .green, backgroundColor: .white, backgroundAlpha: 0.0)
+            return .colored(onColor: onTexture, offColor: offTexture, nonTrackingColor: nonTrackingTexture)
+        } catch {
+            print("⚠️ FocusEntity 텍스처 생성 실패, 단색 사각형으로 대체: \(error)")
+            return .colored(onColor: .color(.blue), offColor: .color(.yellow), nonTrackingColor: .color(.green))
+        }
+    }
+}
 
 extension ARView {
     func screenToWorldRay(_ point: CGPoint) -> (origin: simd_float3, direction: simd_float3)? {
