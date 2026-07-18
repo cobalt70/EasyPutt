@@ -103,23 +103,6 @@ struct ContentView: View {
                         .foregroundColor(.white)
                         .buttonStyle(.plain)
                     }
-                    HStack {
-                        Button(action: { arViewModel.zoomOut() }) {
-                            Image(systemName: "minus.magnifyingglass")
-                        }
-                        Text("확대: \(arViewModel.displayZoom, specifier: "%.1f")x")
-                            .font(.caption2)
-                            .padding(4)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(8)
-                        Button(action: { arViewModel.zoomIn() }) {
-                            Image(systemName: "plus.magnifyingglass")
-                        }
-                        Button(action: { arViewModel.saveSnapshot() }) {
-                            Image(systemName: "camera.fill")
-                        }
-                        .padding(.leading, 8)
-                    }
                 }
                 .padding(8)
                 .background(Color.white.opacity(0.1))
@@ -243,6 +226,9 @@ struct ContentView: View {
             .padding(.horizontal, 8)
             .padding(.top, 4)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            ZoomCornerControl(arViewModel: arViewModel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
         .ignoresSafeArea(edges: [.top, .bottom])
         .gesture(
@@ -313,5 +299,60 @@ struct ActionButton: View {
                 .cornerRadius(10)
         }
         .disabled(disabled)
+    }
+}
+
+struct ZoomCornerControl: View {
+    @ObservedObject var arViewModel: ARViewModel
+    @State private var isDragging = false
+    @State private var hideTask: DispatchWorkItem?
+    @State private var zoomAtGestureStart: Float = 1.0
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if isDragging {
+                VStack(spacing: 4) {
+                    Text(String(format: "%.1fx", arViewModel.displayZoom))
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                    ZStack(alignment: .bottom) {
+                        Capsule()
+                            .fill(Color.white.opacity(0.15))
+                            .frame(width: 4, height: 120)
+                        Capsule()
+                            .fill(Color.white.opacity(0.8))
+                            .frame(width: 4, height: 120 * CGFloat((arViewModel.displayZoom - arViewModel.displayZoomMin) / (arViewModel.displayZoomMax - arViewModel.displayZoomMin)))
+                    }
+                }
+                .transition(.opacity)
+            }
+
+            Button(action: { arViewModel.saveSnapshot() }) {
+                Image(systemName: "camera.fill")
+                    .foregroundColor(.white.opacity(0.6))
+                    .font(.system(size: 18))
+            }
+        }
+        .padding(.trailing, 12)
+        .padding(.top, 8)
+        .frame(width: 90, height: 220, alignment: .top)
+        .contentShape(Rectangle())
+        .gesture(
+            MagnificationGesture()
+                .onChanged { value in
+                    isDragging = true
+                    hideTask?.cancel()
+                    arViewModel.setDisplayZoom(zoomAtGestureStart * Float(value))
+                }
+                .onEnded { _ in
+                    zoomAtGestureStart = arViewModel.displayZoom
+                    let task = DispatchWorkItem {
+                        withAnimation { isDragging = false }
+                    }
+                    hideTask = task
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: task)
+                }
+        )
+        .animation(.easeInOut(duration: 0.2), value: isDragging)
     }
 }

@@ -46,16 +46,13 @@ class ARViewModel : ObservableObject{
 
     /// 화면(AR 콘텐츠)을 디지털로 확대해서 보여주는 배율 — 실제 카메라 렌즈나 트래킹은
     /// 그대로고, 화면에 그려지는 걸 그대로 키워서 보여주는 것뿐이다. 조준 정밀도를 높이려는
-    /// 용도라 스캔이 끝난 뒤(홀 캡처 이후) 주로 쓴다.
+    /// 용도라 스캔이 끝난 뒤(홀 캡처 이후) 주로 쓴다. 우측 상단 코너의 핀치 제스처로
+    /// 1.0~3.0 사이를 연속적으로 조절한다.
     @Published var displayZoom: Float = 1.0
-    let displayZoomLevels: [Float] = [1.0, 1.5, 2.0, 3.0]
-    func zoomIn() {
-        guard let index = displayZoomLevels.firstIndex(of: displayZoom), index < displayZoomLevels.count - 1 else { return }
-        displayZoom = displayZoomLevels[index + 1]
-    }
-    func zoomOut() {
-        guard let index = displayZoomLevels.firstIndex(of: displayZoom), index > 0 else { return }
-        displayZoom = displayZoomLevels[index - 1]
+    let displayZoomMin: Float = 1.0
+    let displayZoomMax: Float = 3.0
+    func setDisplayZoom(_ value: Float) {
+        displayZoom = min(max(value, displayZoomMin), displayZoomMax)
     }
 
     /// 지금 화면(AR 뷰)을 이미지로 캡처해 사진 앱에 저장한다.
