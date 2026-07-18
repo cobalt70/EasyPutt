@@ -401,6 +401,7 @@ final class PuttRangeFinder {
         // 검증 한 번이므로 "백워드 전용은 forward 시뮬레이션을 안 쓴다"는 원칙은 유지된다.
         let overrunCandidates: [Float] = [0.2, 0.3, 0.4, 0.5]
         var center: BackwardTrace?
+        var verifiedPath: [simd_float3] = []
         for overrun in overrunCandidates {
             crossingSpeed = (2 * config.rollingResistance * overrun).squareRoot()
             guard crossingSpeed > 0.0001 else { continue }
@@ -417,6 +418,10 @@ final class PuttRangeFinder {
                 continue
             }
             center = found
+            // 화면에 보여줄 경로는 백워드로 되짚은 근사 경로가 아니라, 방금 검증에 실제로
+            // 쓰인 forward 시뮬레이션 경로 그대로 쓴다 — "검증받은 것"과 "화면에 보이는 것"이
+            // 다르면 안 된다.
+            verifiedPath = verification.path
             break
         }
         guard let center else { return nil }
@@ -426,7 +431,7 @@ final class PuttRangeFinder {
         var solution = PuttSolution(
             direction: center.velocity / speed,
             speed: speed,
-            path: center.path.reversed()
+            path: verifiedPath
         )
 
         // 경계는 추가 시뮬레이션 없이 순수 기하로 구한다 — captureRadius만큼 옆으로 비켜나는

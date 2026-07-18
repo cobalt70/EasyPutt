@@ -58,15 +58,22 @@ class GolfBall: ObservableObject {
             acceleration = .zero
         }
 
-        // 선속도 및 위치 업데이트
-        // 역방향(dt<0) 적분이 정방향 스텝의 정확한 역연산이 되려면, 위치 갱신에
-        // "되돌리기 전(진입 시점)" 속도를 써야 하고, 속도 서브스텝 순서도 뒤집어야
-        // 한다 — 정방향은 (가속→마찰→위치) 순, 역방향은 그 정확한 역순인
-        // (위치→마찰 되돌리기→가속 되돌리기) 순이어야 한다.
+        // 선속도 및 위치 업데이트.
+        // 정방향(dt>=0)은 이제 백워드와 정확히 역연산이 맞아떨어져야 한다는 제약이 없다 —
+        // forward 결과는 이제 별도로(verify()/PuttRangeFinder의 forward 검증) 다시 확인되므로,
+        // 백워드가 "정방향을 정확히 되짚는 것"에 더 이상 기대지 않는다. 그래서 정방향은
+        // 진입 시점 속도 기준의 정확한 운동학 공식(position += v·dt + 0.5·a·dt²)을 쓴다
+        // (구름저항은 단순 상수 가속도가 아니라 위치 공식에 깔끔히 못 넣으므로 속도에만 반영).
+        //
+        // 역방향(dt<0)은 백워드 추적(backwardOnlySolve 등)이 여전히 그 위에서 동작하므로
+        // 손대지 않는다 — 위치 갱신에 "되돌리기 전(진입 시점)" 속도를 쓰고, 속도 서브스텝
+        // 순서도 뒤집어서((위치→마찰 되돌리기→가속 되돌리기) 순) 정방향 스텝의 정확한
+        // 역연산을 유지한다.
         if dt >= 0 {
+            let entryVelocity = velocity
+            position += entryVelocity * dt + 0.5 * acceleration * dt * dt
             velocity += acceleration * dt
             applyRollingResistance(deltaTime: dt)
-            position += velocity * dt
         } else {
             position += velocity * dt   // 되돌리기 전(진입 시점) 속도로 위치 갱신
             applyRollingResistance(deltaTime: dt)
