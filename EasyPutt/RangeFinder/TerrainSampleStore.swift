@@ -30,17 +30,27 @@ final class TerrainSampleStore {
     /// 가장 가까운 샘플의 법선벡터를 거리 제한 없이 반환한다 — 스캔이 듬성듬성해서
     /// 근처에 샘플이 없더라도, 있는 것 중 가장 가까운 값을 최선의 추정치로 쓴다.
     func nearestNormal(to position: simd_float3) -> simd_float3? {
+        nearestSample(to: position)?.normal
+    }
+
+    /// 가장 가까운 샘플의 실제 좌표(높이 포함)를 반환한다 — 지형이 없는 지점의 높이를
+    /// 추정할 때(예: 시각화용 직선의 도착점 높이) 쓴다.
+    func nearestPosition(to position: simd_float3) -> simd_float3? {
+        nearestSample(to: position)?.position
+    }
+
+    private func nearestSample(to position: simd_float3) -> TerrainSample? {
         guard !samples.isEmpty else { return nil }
-        var bestIndex = 0
-        var bestDistanceSquared = horizontalDistanceSquared(position, samples[0].position)
-        for index in 1..<samples.count {
-            let distanceSquared = horizontalDistanceSquared(position, samples[index].position)
+        var best = samples[0]
+        var bestDistanceSquared = horizontalDistanceSquared(position, best.position)
+        for sample in samples.dropFirst() {
+            let distanceSquared = horizontalDistanceSquared(position, sample.position)
             if distanceSquared < bestDistanceSquared {
                 bestDistanceSquared = distanceSquared
-                bestIndex = index
+                best = sample
             }
         }
-        return samples[bestIndex].normal
+        return best
     }
 
     private func horizontalDistanceSquared(_ a: simd_float3, _ b: simd_float3) -> Float {

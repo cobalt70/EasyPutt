@@ -335,13 +335,30 @@ final class PuttRangeFinder {
         let boundaryAngleOffset = atan(boundaryShiftDistance / ballAxisDistance)
         let centerDirection = solution.direction
 
+        // 시각화용 직선의 도착점은 방향벡터의 수직(Y) 성분을 그대로 안 쓴다 — 경사를 타고
+        // 백워드 추적된 방향엔 자연스럽게 위/아래로 기운 성분이 섞여 있어서, 그걸 그대로
+        // ballAxisDistance(수평 거리)만큼 늘리면 실제 지면보다 훨씬 위(또는 아래)로 치솟는
+        // 선이 그려진다. 수평 성분만으로 정확히 홀까지의 수평거리를 스케일하고, 높이는
+        // 그 (X,Z) 지점에서 가장 가까운 지형 샘플의 실제 높이를 찾아 쓴다(terrain.nearestPosition —
+        // 공의 실제 이동을 지배하는 것과 같은 원리: 높이 차이는 배제하고 수평 거리로만 최근접
+        // 지형을 찾는다). directionBoundaryA/B(리포트되는 방향값)는 그대로 두고 화면에 그리는
+        // 선의 도착점만 보정하는 것이다.
+        func boundaryPath(direction: simd_float3) -> [simd_float3] {
+            let horizontal = simd_float3(direction.x, 0, direction.z)
+            guard simd_length(horizontal) > 0.0001 else { return [ballPosition, ballPosition] }
+            let horizontalUnit = simd_normalize(horizontal)
+            let endpoint = ballPosition + horizontalUnit * ballAxisDistance
+            let height = terrain.nearestPosition(to: endpoint)?.y ?? holePosition.y
+            return [ballPosition, simd_float3(endpoint.x, height, endpoint.z)]
+        }
+
         let boundaryADirection = simd_normalize(rotateHorizontal(centerDirection, by: boundaryAngleOffset))
         solution.directionBoundaryA = boundaryADirection
-        solution.boundaryAPath = [ballPosition, ballPosition + boundaryADirection * ballAxisDistance]
+        solution.boundaryAPath = boundaryPath(direction: boundaryADirection)
 
         let boundaryBDirection = simd_normalize(rotateHorizontal(centerDirection, by: -boundaryAngleOffset))
         solution.directionBoundaryB = boundaryBDirection
-        solution.boundaryBPath = [ballPosition, ballPosition + boundaryBDirection * ballAxisDistance]
+        solution.boundaryBPath = boundaryPath(direction: boundaryBDirection)
 
         return solution
     }
