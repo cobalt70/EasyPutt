@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var showResults = false
     @State private var showNormalsList = false
     @State private var gridSpacingAtGestureStart: Float = 60
+    @State private var resultCardExpanded: Bool = true
 
     var body: some View {
         ZStack {
@@ -86,10 +87,21 @@ struct ContentView: View {
                             Image(systemName: "plus.circle.fill")
                         }
                     }
-                    if let distance = arViewModel.ballToHoleDistance, let adjusted = arViewModel.adjustedDistance {
-                        Text("실제 거리: \(distance, specifier: "%.2f")m / 평지 환산: \(adjusted, specifier: "%.2f")m")
-                            .font(.caption2)
-                            .foregroundColor(.white)
+                    if let aim = aimDescription, let distance = arViewModel.ballToHoleDistance, let adjusted = arViewModel.adjustedDistance {
+                        Button(action: { resultCardExpanded.toggle() }) {
+                            if resultCardExpanded {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("🎯 \(aim)")
+                                    Text("실제 거리: \(distance, specifier: "%.2f")m")
+                                    Text("평지 환산: \(adjusted, specifier: "%.2f")m")
+                                }
+                            } else {
+                                Text("🎯 \(aim)")
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                        .buttonStyle(.plain)
                     }
                     HStack {
                         Button(action: { arViewModel.zoomOut() }) {
@@ -270,6 +282,13 @@ struct ContentView: View {
                     .foregroundColor(boundaryBColor)
             }
         }
+    }
+
+    private var aimDescription: String? {
+        guard let solution = arViewModel.rangeFinderSolutions.first,
+              let rel = arViewModel.puttRelative(solution.direction),
+              let centimeters = arViewModel.aimOffsetCentimeters(rel) else { return nil }
+        return describeAimOffset(centimeters: centimeters)
     }
 }
 
