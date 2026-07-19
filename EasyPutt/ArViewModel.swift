@@ -155,7 +155,7 @@ class ARViewModel : ObservableObject{
 
      // 1초단위로 publish해서 ArView에서 startPoint endPoint를 update 하는데 필요할까?
         updateSubject
-            .throttle(for: .seconds(0.1), scheduler: DispatchQueue.main, latest: true)
+            .throttle(for: .seconds(0.05), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 guard let arView = self.arView else { return }
@@ -228,10 +228,17 @@ class ARViewModel : ObservableObject{
         // (45도로 시작했으나 15~20도짜리 가짜 경사 주장들이 통과해 20도로 조임.)
         let maxTiltCosine: Float = cos(20 * Float.pi / 180)
         // 각 샘플을 "극단값(가장 기운 것·가장 덜 기운 것)과 자기 자신을 뺀 나머지의 평균
-        // 법선"과 비교해, 20도 넘게 벌어지면 탈락시킨다(트림 + leave-one-out). 상호 합의
+        // 법선"과 비교해, 허용각 넘게 벌어지면 탈락시킨다(트림 + leave-one-out). 상호 합의
         // 클러스터(O(n²))보다 계산이 가볍고, 극단값과 자기 자신이 판정 기준(평균)을
-        // 오염시키지 못한다.
-        let consensusCosine: Float = cos(20 * Float.pi / 180)
+        // 오염시키지 못한다. 좌표 모드는 10도로 조인다 — 노이즈는 "혼자" 튀므로 이웃
+        // 평균과 크게 벌어져 여기서 잘리고, 진짜 단차면에서는 삼각형들이 다 같이 기울어
+        // 서로 편차가 작아 통과한다. per-hit 모드는 개별 노이즈가 5~10도라 20도 유지.
+        let consensusCosine: Float = cos((computeNormalsFromPositions ? 10 : 20) * Float.pi / 180)
+
+        // 삼각형 게이트는 "그린에서 물리적으로 가능한 최대 기울기"의 절대 한계 —
+        // 링스/투어급 그린의 단차면(티어)은 순간 경사가 6~11도까지 나오므로 15도로 둔다.
+        // (그 안쪽의 고독한 노이즈는 위의 10도 합의 검사가 잡는다.)
+        let triangleTiltCosine: Float = cos(15 * Float.pi / 180)
 
         var hits: [(position: simd_float3, normal: simd_float3)] = []
         if computeNormalsFromPositions {
@@ -249,7 +256,7 @@ class ARViewModel : ObservableObject{
             }
 
             // 좌표 규칙: 각 꼭짓점의 높이를 상하좌우 이웃 꼭짓점들의 평균 높이와 비교해
-            // 3cm 넘게 벗어나면 버린다(물건 위에 맞은 히트 등). 이웃 꼭짓점끼리는 수십 cm
+            // 2cm 넘게 벗어나면 버린다(물건 위에 맞은 히트 등). 이웃 꼭짓점끼리는 수십 cm
             // 거리라 정상 경사(3도)로는 2cm도 차이나지 않으므로 경사 때문에 억울하게
             // 잘리진 않는다. 버려진 꼭짓점은 nil이 되어 관련 삼각형만 자연히 빠진다.
             var corners = rawCorners
@@ -263,7 +270,7 @@ class ARViewModel : ObservableObject{
                     if col < 3, let neighbor = rawCorners[row][col + 1] { neighborHeights.append(neighbor.y) }
                     guard neighborHeights.count >= 2 else { continue }
                     let meanHeight = neighborHeights.reduce(0, +) / Float(neighborHeights.count)
-                    if abs(corner.y - meanHeight) > 0.03 {
+                    if abs(corner.y - meanHeight) > 0.02 {
                         corners[row][col] = nil
                     }
                 }
@@ -276,7 +283,7 @@ class ARViewModel : ObservableObject{
                 guard length > 0.0001 else { return } // 퇴화 삼각형(세 점이 일직선)
                 var normal = cross / length
                 if normal.y < 0 { normal = -normal } // 꼭짓점 순서와 무관하게 항상 위쪽을 향하게
-                guard simd_dot(normal, simd_float3(0, 1, 0)) >= maxTiltCosine else { return }
+                guard simd_dot(normal, simd_float3(0, 1, 0)) >= triangleTiltCosine else { return }
                 hits.append(((a + b + c) / 3, normal))
             }
             for row in 0..<3 {
@@ -331,9 +338,12 @@ class ARViewModel : ObservableObject{
             }
         }
 
-        // 통과가 3개 미만이면 이번 수집 전체를 불신하고 건너뛴다 — 수집 중심을
-        // 등록하지 않으므로 다음 프레임에 같은 자리에서 자동으로 재추출을 시도한다.
-        guard accepted.count >= 3 else { return }
+        // 통과율이 낮으면(운 나쁜 수집) 살아남은 것만 저장하지 않고 통째로 버린다 —
+        // 수집 중심을 등록하지 않으므로 다음 프레임에 같은 자리에서 자동으로 재수집된다.
+        // 좌표 모드: 최대 18개 삼각형 중 6개 이상 그리고 필터 통과율 2/3 이상일 때만 저장.
+        // per-hit 모드(대조군): 노이즈 특성상 그 기준이면 수집이 거의 안 되므로 3개 유지.
+        let minimumAccepted = computeNormalsFromPositions ? max(6, hits.count * 2 / 3) : 3
+        guard accepted.count >= minimumAccepted else { return }
         terrainSampleCollectionCenters.append(centerHit.position)
         for sample in accepted {
             terrainSamples.add(position: sample.position, normal: sample.normal)
