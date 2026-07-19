@@ -137,6 +137,7 @@ struct ContentView: View {
                             arViewModel.holePosition = nil
                             arViewModel.rangeFinderSolutions = []
                             arViewModel.backwardOnlySolutions = []
+                            arViewModel.backwardOnlyNote = nil
                             arViewModel.rangeFinderElapsedMs = nil
                             arViewModel.backwardOnlyElapsedMs = nil
                             arViewModel.ballToHoleDistance = nil
@@ -171,7 +172,9 @@ struct ContentView: View {
 
             GeometryReader { geo in
                 ZoomCornerControl(arViewModel: arViewModel)
-                    .position(x: geo.size.width - 50, y: geo.size.height * 0.6 - 50)
+                    // 카메라 버튼과 같은 12pt 오른쪽 여백에 맞춘다(카메라 버튼: trailing 12,
+                    // 이쪽은 박스 폭 100의 절반만큼 안쪽에서 중심을 잡으므로 62를 뺀다).
+                    .position(x: geo.size.width - 62, y: geo.size.height * 0.6 - 50)
             }
             .zIndex(1) // 다른 오버레이 밑에 깔리지 않도록 최상단에 명시적으로 고정한다.
 
@@ -257,7 +260,7 @@ struct ZoomCornerControl: View {
             // 핀치와 같은 setDisplayZoom을 쓰므로 둘 다 동시에 써도 값이 어긋나지 않는다.
             Button(action: { arViewModel.setDisplayZoom(arViewModel.displayZoom + zoomStep) }) {
                 Image(systemName: "plus.magnifyingglass")
-                    .font(.system(size: 24))
+                    .font(.system(size: 32))
             }
             .buttonStyle(PressStateOpacityButtonStyle())
 
@@ -271,7 +274,7 @@ struct ZoomCornerControl: View {
 
             Button(action: { arViewModel.setDisplayZoom(arViewModel.displayZoom - zoomStep) }) {
                 Image(systemName: "minus.magnifyingglass")
-                    .font(.system(size: 24))
+                    .font(.system(size: 32))
             }
             .buttonStyle(PressStateOpacityButtonStyle())
 
@@ -351,6 +354,11 @@ struct SettingsSheetView: View {
                                     .padding(.top, 4)
                                 ForEach(Array(arViewModel.backwardOnlySolutions.enumerated()), id: \.offset) { _, solution in
                                     solutionRows(solution, boundaryAColor: .blue, boundaryBColor: .orange)
+                                }
+                                if let note = arViewModel.backwardOnlyNote {
+                                    Text(arViewModel.backwardOnlySolutions.isEmpty ? "실패 사유: \(note)" : "참고: \(note)")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
                                 }
                             }
                         }

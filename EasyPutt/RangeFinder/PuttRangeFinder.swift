@@ -110,8 +110,11 @@ final class PuttRangeFinder {
         ball.rollingResistance = config.rollingResistance
 
         for _ in 0..<config.maxBackwardSteps {
-            guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
-            ball.updateFromTorque(deltaTime: -config.deltaTime, surfaceNormal: normal)
+            guard let surface = terrain.nearestSurface(to: ball.position) else { return nil }
+            ball.updateFromTorque(deltaTime: -config.deltaTime, surfaceNormal: surface.normal)
+            // 법선을 이웃 평균으로 얻었으면 높이도 같은 이웃들의 평균으로 스냅 —
+            // 적분 표류로 공이 지면에서 떠오르거나 파묻히는 것을 매 스텝 바로잡는다.
+            ball.position.y = surface.height
 
             let progress = simd_dot(
                 simd_float3(ball.position.x - holePosition.x, 0, ball.position.z - holePosition.z),
@@ -162,7 +165,7 @@ final class PuttRangeFinder {
     /// 여지가 있다 — B+F가 B보다 못한 결과(해를 못 찾음)를 내는 걸 막는다.
     func findSolutions(ballPosition: simd_float3, holePosition: simd_float3) -> [PuttSolution] {
         var solutions: [PuttSolution] = []
-        let candidate = backwardOnlySolve(ballPosition: ballPosition, holePosition: holePosition)
+        let candidate = backwardOnlySolve(ballPosition: ballPosition, holePosition: holePosition).solution
             ?? config.holeCrossingSpeeds.lazy.compactMap {
                 self.backwardCandidate(holePosition: holePosition, ballPosition: ballPosition, holeCrossingSpeed: $0)
             }.first
@@ -187,9 +190,10 @@ final class PuttRangeFinder {
     /// forward 시뮬레이션(verify/correct)을 전혀 쓰지 않고, 백워드 추적 + 이분탐색만으로
     /// 해와 좌우 범위를 직접 구한다. holeCrossingSpeeds 각각에 대해 backwardOnlySolve를
     /// 호출한다 — findSolutions()와 대응되는 "백워드 전용" 버전.
-    func findSolutionsBackwardOnly(ballPosition: simd_float3, holePosition: simd_float3) -> [PuttSolution] {
-        guard let solution = backwardOnlySolve(ballPosition: ballPosition, holePosition: holePosition) else { return [] }
-        return [solution]
+    func findSolutionsBackwardOnly(ballPosition: simd_float3, holePosition: simd_float3) -> (solutions: [PuttSolution], note: String?) {
+        let (solution, note) = backwardOnlySolve(ballPosition: ballPosition, holePosition: holePosition)
+        guard let solution else { return ([], note) }
+        return ([solution], note)
     }
 
     /// 홀→공 직선을 탐색 기준각(0도)으로 삼는다. 각 테스트 각도로 홀에서 백워드 추적해
@@ -212,11 +216,18 @@ final class PuttRangeFinder {
         // 예산 안에서도 충분히 먼 거리까지 커버되지만, 89도까지 가면 그 여유가 크게 줄어든다.
         maxCoarseSteps: Int = 60,
         bisectionIterations: Int = 24
-    ) -> PuttSolution? {
+    ) -> (solution: PuttSolution?, note: String?) {
+        var lastFailureReason: String?
+        // solveAngle이 브라켓 실패로 폴백 후보를 썼을 때, "어떤 각도를 볼로부터 얼마나
+        // 떨어진 채 썼는지" 성공한 최종 해에도 남겨 보여주기 위한 메모. solveAngle 호출마다
+        // 새로 초기화된다.
+        var lastSolveAngleNote: String?
         let toBall = ballPosition - holePosition
         let toBallHorizontal = simd_float3(toBall.x, 0, toBall.z)
         let ballAxisDistance = simd_length(toBallHorizontal)
-        guard ballAxisDistance > 0.0001 else { return nil }
+        guard ballAxisDistance > 0.0001 else {
+            return (nil, "공과 홀 위치가 같음 (거리: \(ballAxisDistance)m)")
+        }
         let toBallUnit = toBallHorizontal / ballAxisDistance
         let forwardAxis = -toBallUnit
         let rightAxis = simd_float3(-forwardAxis.z, 0, forwardAxis.x)
@@ -243,8 +254,10 @@ final class PuttRangeFinder {
             var previousProgress: Float = 0
 
             for step in 0..<config.maxBackwardSteps {
-                guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
-                ball.updateFromTorque(deltaTime: -config.deltaTime, surfaceNormal: normal)
+                guard let surface = terrain.nearestSurface(to: ball.position) else { return nil }
+                ball.updateFromTorque(deltaTime: -config.deltaTime, surfaceNormal: surface.normal)
+                // 법선과 같은 이웃 평균 높이로 매 스텝 스냅해 적분 표류를 바로잡는다.
+                ball.position.y = surface.height
 
                 // 이번 스텝이 그린 실제 경로(직전~다음 위치) 선분이 공 위치에서 0.5cm 이내로
                 // 지나가면, 그 선분 위 최근접점에서 공을 직접 맞힌 것으로 본다 — 공의 출발선
@@ -297,6 +310,7 @@ final class PuttRangeFinder {
         // 이미 정답 근처라는 걸 알고 있으니 거기서부터 살짝만 더 틀어보면 된다
         // (directionRange가 verify()로 구한 중앙 방향에서부터 경계를 찾아나가는 것과 같은 패턴).
         func solveAngle(target: Float, startAngle: Float = 0) -> BackwardTrace? {
+            lastSolveAngleNote = nil
             // startAngle 자체가(가파른 지형, 수치오차 등으로) 실패할 수 있다 — 이 경우 곧장
             // 포기하지 않고 양쪽으로 coarseAngleStep씩 넓혀가며 "처음으로 성공하는 각도"를
             // 찾는다. directionRange의 captures()가 실패를 "이 각도는 안 됨"으로만 처리하고
@@ -319,7 +333,9 @@ final class PuttRangeFinder {
                     }
                 }
                 guard let found else {
-                    print("[백워드전용] target=\(target): \(startAngle * 180 / .pi)도 근방 \(maxCoarseSteps)도 범위 안에서 유효한 추적을 하나도 못 찾음")
+                    let reason = "\(startAngle * 180 / .pi)도 근방 \(maxCoarseSteps)도 범위 안에서 유효한 추적을 하나도 못 찾음"
+                    print("[백워드전용] target=\(target): \(reason)")
+                    lastFailureReason = reason
                     return nil
                 }
                 print("[백워드전용] target=\(target): \(startAngle * 180 / .pi)도 실패, \(found.angle * 180 / .pi)도에서 첫 성공")
@@ -362,8 +378,31 @@ final class PuttRangeFinder {
             }
 
             guard let bracket else {
-                print("[백워드전용] target=\(target): \(probeAngle * 180 / .pi)도 기준 양쪽 \(maxCoarseSteps)도 안에 부호 반전 못 찾음(브라켓 실패)")
-                return nil
+                let reason = "\(probeAngle * 180 / .pi)도 기준 양쪽 \(maxCoarseSteps)도 안에 부호 반전 못 찾음(브라켓 실패)"
+                print("[백워드전용] target=\(target): \(reason)")
+                lastFailureReason = reason
+                // 부호 반전을 못 찾아 이분탐색으로 정확히 수렴은 못 했지만, 지금까지 훑은 것 중
+                // 볼에 가장 가까웠던 시도를 대신 넘긴다 — 정확한 해가 아니라 근사일 뿐이므로,
+                // 곧이어(이 함수 밖 line 441 근처) simulateForward로 실제 홀 통과 여부를 다시
+                // 검증한다. 여기서 잘못 골라도 그 검증에서 걸러지므로 안전하다.
+                let bestFallback = [
+                    (probeOffset, probeTrace),
+                    (lastGood[1]?.value ?? probeOffset, lastGood[1]?.trace ?? probeTrace),
+                    (lastGood[-1]?.value ?? probeOffset, lastGood[-1]?.trace ?? probeTrace)
+                ].min { abs($0.0) < abs($1.0) }!
+                // captureRadius(±5.4cm) 밖으로 벗어난 시도는 forward 검증까지 갈 것도 없이
+                // 애초에 후보가 아니다 — 홀 쪽 캡처 반경과 같은 값을 볼 쪽 근사 허용치로도
+                // 그대로 재사용해, 값이 바뀌어도(예: 5.4cm 재조정) 같이 따라가게 한다.
+                guard abs(bestFallback.0) <= config.captureRadius else {
+                    print("[백워드전용] target=\(target): 가장 가까운 시도(|offset|=\(abs(bestFallback.0)))도 captureRadius(\(config.captureRadius)) 밖 — 포기")
+                    return nil
+                }
+                let rangeCm = config.captureRadius * 100
+                let offsetCm = bestFallback.0 * 100
+                let note = "브라켓 실패 — 허용범위 -\(rangeCm)cm ~ +\(rangeCm)cm 중 \(bestFallback.1.angle * 180 / .pi)도(볼 기준 \(offsetCm)cm 지점) 후보를 forward로 검증"
+                print("[백워드전용] target=\(target): \(note)")
+                lastSolveAngleNote = note
+                return bestFallback.1
             }
 
             let lowSeed = lastGood[bracketSign] ?? (probeAngle, probeOffset, probeTrace)
@@ -415,32 +454,40 @@ final class PuttRangeFinder {
         // 검증 한 번이므로 "백워드 전용은 forward 시뮬레이션을 안 쓴다"는 원칙은 유지된다.
         let overrunCandidates: [Float] = [0.2, 0.3, 0.4, 0.5]
         var center: BackwardTrace?
+        var centerNote: String?
         var verifiedPath: [simd_float3] = []
         for overrun in overrunCandidates {
             crossingSpeed = (2 * config.rollingResistance * overrun).squareRoot()
             guard crossingSpeed > 0.0001 else { continue }
             guard let found = solveAngle(target: 0) else {
+                // lastFailureReason은 solveAngle 내부에서 이미 설정됨.
                 print("[백워드전용] overrun=\(overrun)m(crossingSpeed=\(crossingSpeed)) 중앙해 실패, 더 큰 값으로 재시도")
                 continue
             }
             let foundSpeed = simd_length(found.velocity)
-            guard foundSpeed > 0.0001 else { continue }
+            guard foundSpeed > 0.0001 else {
+                lastFailureReason = "overrun=\(overrun)m: 수렴한 속도가 0에 가까움"
+                continue
+            }
             let candidate = PuttSolution(direction: found.velocity / foundSpeed, speed: foundSpeed)
             guard let verification = simulateForward(candidate, from: ballPosition, holePosition: holePosition),
                   verification.closestDistance <= config.captureRadius else {
-                print("[백워드전용] overrun=\(overrun)m: 중앙해는 찾았지만 forward 검증 실패(홀과 최근접 거리가 캡처 반경 밖) — 더 큰 값으로 재시도")
+                let reason = "overrun=\(overrun)m: 중앙해는 찾았지만 forward 검증 실패(홀과 최근접 거리가 캡처 반경 밖)"
+                print("[백워드전용] \(reason) — 더 큰 값으로 재시도")
+                lastFailureReason = reason
                 continue
             }
             center = found
+            centerNote = lastSolveAngleNote
             // 화면에 보여줄 경로는 백워드로 되짚은 근사 경로가 아니라, 방금 검증에 실제로
             // 쓰인 forward 시뮬레이션 경로 그대로 쓴다 — "검증받은 것"과 "화면에 보이는 것"이
             // 다르면 안 된다.
             verifiedPath = verification.path
             break
         }
-        guard let center else { return nil }
+        guard let center else { return (nil, lastFailureReason ?? "원인 불명") }
         let speed = simd_length(center.velocity)
-        guard speed > 0.0001 else { return nil }
+        guard speed > 0.0001 else { return (nil, "수렴한 속도가 0에 가까움") }
 
         var solution = PuttSolution(
             direction: center.velocity / speed,
@@ -477,7 +524,7 @@ final class PuttRangeFinder {
         solution.directionBoundaryB = simd_normalize(rotateHorizontal(centerDirection, by: boundaryAngleOffset))
         solution.boundaryBPath = rotatedPath(by: boundaryAngleOffset)
 
-        return solution
+        return (solution, centerNote)
     }
 
     /// solution의 속도는 고정한 채 방향(좌우 각도)만 조금씩 틀어가며, 여전히 캡처
@@ -549,8 +596,10 @@ final class PuttRangeFinder {
         var previousPosition = ballPosition
 
         for step in 0..<config.maxForwardSteps {
-            guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
-            ball.updateForwardWithSlip(deltaTime: config.deltaTime, surfaceNormal: normal)
+            guard let surface = terrain.nearestSurface(to: ball.position) else { return nil }
+            ball.updateForwardWithSlip(deltaTime: config.deltaTime, surfaceNormal: surface.normal)
+            // 법선과 같은 이웃 평균 높이로 매 스텝 스냅해 적분 표류를 바로잡는다.
+            ball.position.y = surface.height
 
             // 스텝 끝점만 보지 않고, 직전~다음 위치를 잇는 선분 전체에서 홀컵까지의 최소
             // 거리를 본다 — 안 그러면 빠른 공이 좁은 홀컵 반경(3.3cm)을 두 샘플 사이에서

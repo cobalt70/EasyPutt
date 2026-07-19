@@ -71,6 +71,9 @@ class ARViewModel : ObservableObject{
     /// forward 시뮬레이션(verify/correct) 없이 백워드 추적 + 이분탐색만으로 구한 해/범위
     /// — rangeFinderSolutions(백워드+포워드 병용)와 값/속도를 비교하기 위한 두 번째 결과.
     @Published var backwardOnlySolutions: [PuttSolution] = []
+    /// 해를 못 찾은 이유, 또는 (해를 찾았어도) 브라켓 실패로 볼 근처 폴백 후보를 forward로
+    /// 검증해서 썼다면 그 내역 — 어느 쪽이든 사용자에게 보여줄 진단 메모.
+    @Published var backwardOnlyNote: String?
     @Published var ballToHoleDistance: Float?
     /// 두 방식의 계산 소요시간(ms) — 백워드 전용이 forward 검증이 없는 만큼 더 빠를 것으로
     /// 예상되나, 실제 값으로 비교하기 위해 측정한다.
@@ -217,10 +220,15 @@ class ARViewModel : ObservableObject{
         guard !tooClose else { return }
         terrainSampleCollectionCenters.append(centerHit.position)
 
+        // 지면(수평)에서 45도를 넘게 기운 법선은 실제 그린 기울기일 리 없고, 의자다리·케이블
+        // 같은 잡동사니에 맞은 스퓨리어스 raycast일 가능성이 높다 — 그런 샘플은 저장하지 않는다.
+        let maxTiltCosine: Float = cos(45 * .pi / 180)
+
         let offsets: [CGFloat] = [-s, 0, s]
         for yOffset in offsets {
             for xOffset in offsets {
                 guard let hit = groundHit(at: CGPoint(x: cx + xOffset, y: cy + yOffset)) else { continue }
+                guard simd_dot(simd_normalize(hit.normal), simd_float3(0, 1, 0)) >= maxTiltCosine else { continue }
                 terrainSamples.add(position: hit.position, normal: hit.normal)
             }
         }
@@ -321,7 +329,9 @@ class ARViewModel : ObservableObject{
         rangeFinderElapsedMs = Date().timeIntervalSince(combinedStart) * 1000
 
         let backwardOnlyStart = Date()
-        backwardOnlySolutions = finder.findSolutionsBackwardOnly(ballPosition: ball, holePosition: hole)
+        let backwardOnlyResult = finder.findSolutionsBackwardOnly(ballPosition: ball, holePosition: hole)
+        backwardOnlySolutions = backwardOnlyResult.solutions
+        backwardOnlyNote = backwardOnlyResult.note
         backwardOnlyElapsedMs = Date().timeIntervalSince(backwardOnlyStart) * 1000
     }
 
