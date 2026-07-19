@@ -111,6 +111,70 @@ class GolfBall: ObservableObject {
         rotation = simd_normalize(deltaRotation * rotation)
     }
 
+    /// 미끄럼 상태 판정 임계값(m/s) — 접촉점 상대속도 크기가 이보다 작으면
+    /// 순수구름으로 본다.
+    private static let slipThreshold: Float = 0.03
+
+    /// 정방향(dt≥0) 전용 — 미끄럼 구간에서 마찰력이 병진(위치/속도)과 회전(토크)
+    /// 모두에 반영되도록 접촉점 상대속도 기준으로 계산한다. updateFromTorque는
+    /// 역방향 대칭성이 필요한 백워드 추적이 계속 쓰므로 그대로 두고, 이 함수는
+    /// PuttRangeFinder.simulateForward() 전용이다.
+    func updateForwardWithSlip(deltaTime dt: Float, surfaceNormal n: simd_float3) {
+        let gravityParallel = gravity - simd_dot(gravity, n) * n
+
+        // 접촉점(중심에서 -radius*n 방향)의 지면 대비 상대속도.
+        let r = -radius * n
+        let vContact = velocity + simd_cross(angularVelocity, r)
+        let slipSpeed = simd_length(vContact)
+
+        let acceleration: simd_float3
+        let rotationAxis: simd_float3
+        let isSlipping = slipSpeed > Self.slipThreshold
+
+        if isSlipping {
+            // 미끄럼 구간: 접촉점 상대속도 기준 마찰력이 병진과 회전에 동시에 작용한다.
+            // 5/7 계수(순수구름 구속조건 전제)는 아직 적용하지 않는다.
+            let normalAccel = -simd_dot(gravity, n)
+            let frictionAccMag = muKinetic * normalAccel
+            let frictionDir = -vContact / slipSpeed
+            let frictionAcc = frictionDir * frictionAccMag
+
+            acceleration = gravityParallel + frictionAcc
+
+            let crossVec = simd_cross(frictionDir, n)
+            rotationAxis = simd_length(crossVec) > 0.0001 ? simd_normalize(crossVec) : simd_float3(0, 1, 0)
+            let torqueMag = radius * frictionAccMag * mass
+            let inertia = (2.0 / 5.0) * mass * pow(radius, 2)
+            let angularAccel = torqueMag / inertia
+            angularVelocity += rotationAxis * angularAccel * dt
+        } else {
+            // 순수구름 구간: 기존 updateFromTorque와 동일한 물리.
+            let accelMag = simd_length(gravityParallel) * (5.0 / 7.0)
+            acceleration = accelMag > 0.0001 ? simd_normalize(gravityParallel) * accelMag : .zero
+            rotationAxis = simd_length(velocity) > 0.0001 ? simd_normalize(simd_cross(n, simd_normalize(velocity))) : simd_float3(0, 1, 0)
+        }
+
+        let entryVelocity = velocity
+        position += entryVelocity * dt + 0.5 * acceleration * dt * dt
+        velocity += acceleration * dt
+
+        if isSlipping {
+            // 마찰이 이미 위에서 acceleration에 반영됐으므로 applyRollingResistance는
+            // 호출하지 않는다(구름저항은 순수구름 상태에서만 성립하는 별개 메커니즘).
+        } else {
+            applyRollingResistance(deltaTime: dt)
+            guard simd_length(velocity) > 0.0001 else { return }
+            let targetAngular = simd_length(velocity) / radius
+            angularVelocity = rotationAxis * targetAngular
+        }
+
+        let angle = simd_length(angularVelocity) * dt
+        if angle.isFinite && simd_length(rotationAxis) > 0.0001 {
+            let deltaRotation = simd_quatf(angle: angle, axis: rotationAxis)
+            rotation = simd_normalize(deltaRotation * rotation)
+        }
+    }
+
     /// 구름저항을 병진속도에 반영한다. `dt`가 음수(역방향 계산)면 자연히 반대로
     /// 작용해 속도가 늘어난다 — 별도의 "역방향" 분기 없이 동일한 식으로 양방향을 다룬다.
     private func applyRollingResistance(deltaTime dt: Float) {

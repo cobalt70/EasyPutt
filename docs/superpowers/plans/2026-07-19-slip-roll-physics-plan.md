@@ -167,9 +167,9 @@ Expected: BUILD FAILED — `updateForwardWithSlip`가 아직 없어서 컴파일
 
             acceleration = gravityParallel + frictionAcc
 
-            let crossVec = simd_cross(n, frictionDir)
+            let crossVec = simd_cross(frictionDir, n)
             rotationAxis = simd_length(crossVec) > 0.0001 ? simd_normalize(crossVec) : simd_float3(0, 1, 0)
-            let torqueMag = radius * frictionAccMag
+            let torqueMag = radius * frictionAccMag * mass
             let inertia = (2.0 / 5.0) * mass * pow(radius, 2)
             let angularAccel = torqueMag / inertia
             angularVelocity += rotationAxis * angularAccel * dt
@@ -311,3 +311,7 @@ git commit -m "simulateForward가 미끄럼 반영 물리(updateForwardWithSlip)
 - **스펙 커버리지**: 설계 문서 2절(새 물리 함수)→Task 1, 3절(PuttRangeFinder 연결)→Task 2, 4절(테스트 전략의 신규 테스트 4개)→Task 1 Step 1, 4절의 회귀 테스트 항목→Task 2 Step 3. 5절(PuttPro 비교)은 설계 근거 문서이지 구현 대상이 아니므로 태스크 없음(의도된 것).
 - **타입/시그니처 일관성**: `updateForwardWithSlip(deltaTime:surfaceNormal:)` 시그니처가 Task 1(정의)과 Task 2(호출)에서 동일. `GolfBall.rollingResistance`(기존 internal var), `GolfBall.velocity`(기존 internal var) 등 테스트가 쓰는 기존 API도 실제 파일과 일치 확인함(직접 재확인).
 - **플레이스홀더 스캔**: Task 1 Step 3 초안에 Swift 코드가 아닌 한글 설명이 섞여 들어간 줄이 있어서, 빈 `if` 분기 + 주석으로 바로 고쳤다(아래 최종 코드 블록에 반영됨, 별도 블록 없이 하나로 정리).
+- **Task 1 구현 중 발견된 물리 버그(사후 수정, 2026-07-19)**: Step 3의 `isSlipping` 분기에 두 가지 결함이 있어 평지에서도 미끄럼→구름 전환이 절대 일어나지 않고 각속도가 발산했다(standalone 검증 스크립트로 재현: 200스텝 후 `w.z`가 초당 수천 rad/s로 발산, `slipSpeed`가 계속 증가). 두 결함:
+  1. **부호 오류**: `let crossVec = simd_cross(n, frictionDir)` — 인자 순서가 반대였다. 접촉점 토크는 `τ = r × F`이고 `r = -radius * n`이므로 `cross(n, frictionDir)`가 아니라 `cross(frictionDir, n)`이어야 한다(부호 반전 누락). 잘못된 부호 때문에 마찰 토크가 접촉점 상대속도를 줄이는 대신 키우는 방향(양의 되먹임)으로 각속도를 쌓았다.
+  2. **질량 계수 누락**: `let torqueMag = radius * frictionAccMag` — `frictionAccMag`는 가속도(m/s²)인데 힘(N)처럼 다뤄서 `mass`를 곱하지 않았다. `inertia`는 `mass`를 포함하므로 이대로면 `angularAccel`에 `1/mass`가 잘못 끼어들어(공은 mass=0.045kg로 작아서) 약 22배 과대해졌다. 올바른 식은 `torqueMag = radius * frictionAccMag * mass`(그러면 `angularAccel = torqueMag/inertia`에서 mass가 상쇄되어 `(5/2)*frictionAccMag/radius`와 동일해진다 — mass에 무관해야 정상).
+  - 두 수정을 모두 적용한 뒤 standalone 검증으로 재확인: 평지 미끄럼(초기속도 2m/s, dt=0.01)이 약 28스텝(≈0.28초) 만에 순수구름으로 전환되고, 이후 감속량이 `rollingResistance*dt`와 일치했다. Task 1의 4개 신규 테스트 기댓값과도 모두 부합함(표준 tolerance 이내). 아래 Step 3 코드 블록은 수정 반영된 최종본이다.
