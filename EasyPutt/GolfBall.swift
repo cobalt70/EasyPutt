@@ -75,9 +75,18 @@ class GolfBall: ObservableObject {
             velocity += acceleration * dt
             applyRollingResistance(deltaTime: dt)
         } else {
-            position += velocity * dt   // 되돌리기 전(진입 시점) 속도로 위치 갱신
+            // 정방향 속도 갱신은 A(가속) 다음 R(마찰)을 적용하는 합성함수 v_{n+1}=R(A(v_n))
+            // 이므로, 역연산은 순서가 뒤집힌 (R∘A)⁻¹ = A⁻¹∘R⁻¹, 즉 v_n = A⁻¹(R⁻¹(v_{n+1})) —
+            // 마찰을 먼저 되돌리고 가속을 나중에 되돌려야 한다(R은 방향유지·크기만 줄이는
+            // 비선형 연산이라 가속도가 속도와 다른 방향일 때 순서를 바꾸면 다른 값이 나온다).
             applyRollingResistance(deltaTime: dt)
             velocity += acceleration * dt
+            // 여기서부턴 velocity가 복원된 진입 시점 속도(entryVelocity, = v_n)다. 정방향과
+            // 같은 운동학 공식의 해석적 역연산으로 위치를 갱신한다. dt²는 부호에 무관하게
+            // 항상 양수이므로 가속도 항의 부호가 정방향과 반대로 뒤집힌다: 정방향
+            // p += v·dt + 0.5·a·dt² 을 p_n = p_{n+1} - v_n·h - 0.5·a·h²(h=|dt|)로 풀면
+            // p += entryVelocity·dt - 0.5·a·dt·dt 가 된다.
+            position += velocity * dt - 0.5 * acceleration * dt * dt
         }
 
         guard simd_length(velocity) > 0.0001 else { return }
