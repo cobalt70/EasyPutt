@@ -335,11 +335,29 @@ struct SettingsSheetView: View {
                 }
 
                 Section("법선벡터") {
-                    Picker("수집 방식", selection: $arViewModel.computeNormalsFromPositions) {
-                        Text("좌표로 계산").tag(true)
-                        Text("법선 수집").tag(false)
+                    HStack(spacing: 8) {
+                        Button(action: { arViewModel.computeNormalsFromPositions = true }) {
+                            Text("좌표로 계산")
+                                .font(.subheadline.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(arViewModel.computeNormalsFromPositions ? Color.green : Color.gray.opacity(0.25))
+                                .foregroundColor(arViewModel.computeNormalsFromPositions ? .white : .primary)
+                                .cornerRadius(10)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { arViewModel.computeNormalsFromPositions = false }) {
+                            Text("법선 수집")
+                                .font(.subheadline.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(!arViewModel.computeNormalsFromPositions ? Color.orange : Color.gray.opacity(0.25))
+                                .foregroundColor(!arViewModel.computeNormalsFromPositions ? .white : .primary)
+                                .cornerRadius(10)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .pickerStyle(.segmented)
                     Text(arViewModel.computeNormalsFromPositions
                          ? "꼭짓점 좌표 16개에서 삼각형 외적으로 직접 계산 (정밀)"
                          : "ARKit이 주는 히트 법선을 그대로 수집 (대조군)")
