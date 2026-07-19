@@ -130,15 +130,20 @@ struct ARViewContainer: UIViewRepresentable {
             let position = simd_make_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
             parent.arViewModel.holePosition = position
             parent.arViewModel.stopCollectingTerrainSamples()
-            parent.arViewModel.runRangeFinder()
             if let arView = parent.arViewModel.arView {
-                drawTrajectories(
-                    parent.arViewModel.rangeFinderSolutions,
-                    backwardOnlySolutions: parent.arViewModel.backwardOnlySolutions,
-                    in: arView
-                )
                 drawTerrainSampleMarkers(parent.arViewModel.terrainSamples.samples, in: arView)
                 drawFlagMarker(at: position, in: arView)
+            }
+            // 솔버는 백그라운드에서 돌고(async), 궤적은 결과가 나온 뒤 메인에서 그린다.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.parent.arViewModel.runRangeFinder()
+                guard let arView = self.parent.arViewModel.arView else { return }
+                drawTrajectories(
+                    self.parent.arViewModel.rangeFinderSolutions,
+                    backwardOnlySolutions: self.parent.arViewModel.backwardOnlySolutions,
+                    in: arView
+                )
             }
         }
 

@@ -30,39 +30,60 @@ final class TerrainSampleStore {
         samples.removeAll()
     }
 
-    /// 최근접 샘플에서 이만큼 이내에 있는 이웃까지 법선 평균에 포함한다 — 3x3 수집 패치의
-    /// 실제 샘플 간격(terrainSampleMinSpacing=0.3m 수준)을 덮는 크기.
+    /// 백그라운드 솔버가 읽는 동안 Reset 등이 원본을 비워도 안전하도록, 솔버에 넘길
+    /// 스냅샷 복사본을 만든다 (samples는 값 타입 배열이라 통째 대입이 곧 복사다).
+    func snapshot() -> TerrainSampleStore {
+        let copy = TerrainSampleStore()
+        copy.samples = samples
+        return copy
+    }
+
+    /// 최근접 샘플에서 이만큼 이내에 있는 이웃까지 최빈 클러스터 후보에 포함한다 —
+    /// 3x3 수집 패치의 실제 샘플 간격(terrainSampleMinSpacing=0.3m 수준)을 덮는 크기.
     private let neighborAveragingMargin: Float = 0.5
 
-    /// 가장 가까운 샘플의 법선을 거리 제한 없이 쓰되, 최근접과 비슷한 거리
-    /// (+neighborAveragingMargin 이내)의 이웃 법선들을 평균해 반환한다 — 최근접 하나만
-    /// 쓰면 수집 게이트(45도)를 통과한 아웃라이어 샘플 하나가 그 주변 물리를 통째로
-    /// 지배하는데, 평균을 내면 그 영향이 이웃 수만큼 희석된다. 저장된 법선은 전부
-    /// 단위벡터이므로 합을 다시 정규화하면 결과도 단위벡터다.
+    /// 이 각도 이내로 비슷한 법선은 "같은 법선"으로 묶는다 — 그린의 실제 기울기 변화와
+    /// 센서 노이즈는 몇 도 수준이고, 45도 게이트를 통과한 아웃라이어는 보통 이보다 크게
+    /// 어긋나므로 무리에 못 끼고 탈락한다.
+    private let modeAngleToleranceCosine: Float = cos(10 * Float.pi / 180)
+
+    /// 질의 지점 주변 이웃들의 최빈(mode) 법선을 반환한다 — nearestSurface 참고.
     func nearestNormal(to position: simd_float3) -> simd_float3? {
         nearestSurface(to: position)?.normal
     }
 
-    /// nearestNormal과 같은 이웃 집합에서, 법선 평균과 지면 높이(이웃 샘플 위치의 y 평균)를
-    /// 한 번의 스캔으로 함께 반환한다 — 법선을 이웃 평균으로 보정했으면, 그 법선을 쓰는
-    /// 지점의 높이도 같은 이웃들의 높이로 보정하는 게 일관적이다(시뮬레이션 스텝마다
-    /// 공의 y를 이 값으로 스냅해 궤적이 실제 지면에서 떠오르거나 파묻히는 표류를 막는다).
+    /// 최근접과 비슷한 거리(+neighborAveragingMargin 이내)의 이웃들을 모은 뒤, 법선이
+    /// 허용 각도(modeAngleToleranceCosine) 이내로 비슷한 것끼리 무리 지어 가장 빈도가
+    /// 높은 무리(최빈 클러스터)의 평균 법선과 평균 높이를 반환한다. 단순 평균은
+    /// 아웃라이어도 1/k만큼 결과를 끌어당기지만, 최빈 무리를 고르면 소수 아웃라이어는
+    /// 무리에 못 끼어 결과에 아예 영향을 못 준다. 동률이면 질의 지점에 더 가까운 샘플이
+    /// 이끄는 무리가 이긴다. 높이도 같은(이긴) 무리의 샘플들에서만 평균한다 —
+    /// 법선과 높이가 같은 지면 추정에서 나오도록(시뮬레이션 스텝마다 공의 y를 이 값으로
+    /// 스냅해 궤적이 실제 지면에서 떠오르거나 파묻히는 표류를 막는다).
     func nearestSurface(to position: simd_float3) -> (normal: simd_float3, height: Float)? {
         guard let nearest = nearestSample(to: position) else { return nil }
         let radius = horizontalDistanceSquared(position, nearest.position).squareRoot() + neighborAveragingMargin
         let radiusSquared = radius * radius
+        var neighbors = samples.filter { horizontalDistanceSquared(position, $0.position) <= radiusSquared }
+        neighbors.sort { horizontalDistanceSquared(position, $0.position) < horizontalDistanceSquared(position, $1.position) }
+
+        var bestGroup: [TerrainSample] = []
+        for center in neighbors {
+            let group = neighbors.filter { simd_dot($0.normal, center.normal) >= modeAngleToleranceCosine }
+            if group.count > bestGroup.count {
+                bestGroup = group
+            }
+        }
+
         var sum = simd_float3.zero
         var heightSum: Float = 0
-        var count = 0
-        for sample in samples where horizontalDistanceSquared(position, sample.position) <= radiusSquared {
+        for sample in bestGroup {
             sum += sample.normal
             heightSum += sample.position.y
-            count += 1
         }
-        let height = heightSum / Float(count)
-        let length = simd_length(sum)
-        guard length > 0.0001 else { return (nearest.normal, height) }
-        return (sum / length, height)
+        let height = heightSum / Float(bestGroup.count)
+        // 무리 안 법선들은 서로 10도 이내라 합이 0이 될 수 없다 — 정규화만 하면 단위벡터.
+        return (simd_normalize(sum), height)
     }
 
     /// 가장 가까운 샘플의 실제 좌표(높이 포함)를 반환한다 — 지형이 없는 지점의 높이를

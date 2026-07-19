@@ -34,7 +34,7 @@ class ARViewModel : ObservableObject{
     /// 최소 이만큼(미터) 떨어져 있어야 한다 — 제자리 정체나 경로가 교차할 때
     /// 중복 수집을 막는다. 실제로는 매 틱 gridCellMeters(격자 한 칸의 실제 거리)를
     /// 우선 쓰고, 그 값을 못 구했을 때만 이 고정값으로 대체한다.
-    var terrainSampleMinSpacing: Float = 0.3
+    var terrainSampleMinSpacing: Float = 0.2
     /// 카메라에서 조준 지점까지의 거리가 이보다 가까우면 수집을 생략한다 —
     /// 너무 가까운/가파른 각도의 raycast는 노이즈가 커서 신뢰하기 어렵다.
     var terrainSampleMinCenterDistance: Float = 0.3
@@ -218,19 +218,48 @@ class ARViewModel : ObservableObject{
             simd_distance($0, centerHit.position) < minSpacing
         }
         guard !tooClose else { return }
-        terrainSampleCollectionCenters.append(centerHit.position)
 
         // 지면(수평)에서 45도를 넘게 기운 법선은 실제 그린 기울기일 리 없고, 의자다리·케이블
-        // 같은 잡동사니에 맞은 스퓨리어스 raycast일 가능성이 높다 — 그런 샘플은 저장하지 않는다.
+        // 같은 잡동사니에 맞은 스퓨리어스 raycast일 가능성이 높다 — 그런 히트는 쓰지 않는다.
         let maxTiltCosine: Float = cos(45 * .pi / 180)
+        // 9개 히트 중 법선이 서로 20도 이내로 맞는 최대 무리(합의 클러스터)만 저장한다 —
+        // 소수 아웃라이어는 무리에 못 끼어 수집 단계에서 제거된다. 특정 기준점(중앙)과
+        // 비교하는 게 아니라 상호 비교로 최대 무리를 뽑으므로, 중앙 자신이 아웃라이어여도
+        // 안전하다. (꼭짓점까지 25개를 뽑는 버전은 매 프레임 raycast 부하로 메인 스레드
+        // 행(hang)을 유발해서 칸 중심 9개로 유지한다.)
+        let consensusCosine: Float = cos(20 * Float.pi / 180)
 
-        let offsets: [CGFloat] = [-s, 0, s]
-        for yOffset in offsets {
-            for xOffset in offsets {
-                guard let hit = groundHit(at: CGPoint(x: cx + xOffset, y: cy + yOffset)) else { continue }
-                guard simd_dot(simd_normalize(hit.normal), simd_float3(0, 1, 0)) >= maxTiltCosine else { continue }
-                terrainSamples.add(position: hit.position, normal: hit.normal)
+        func gatedHit(at point: CGPoint) -> (position: simd_float3, normal: simd_float3)? {
+            guard let hit = groundHit(at: point) else { return nil }
+            let normal = simd_normalize(hit.normal)
+            guard simd_dot(normal, simd_float3(0, 1, 0)) >= maxTiltCosine else { return nil }
+            return (hit.position, normal)
+        }
+
+        var hits: [(position: simd_float3, normal: simd_float3)] = []
+        let cellOffsets: [CGFloat] = [-s, 0, s]
+        for yOffset in cellOffsets {
+            for xOffset in cellOffsets {
+                if let hit = gatedHit(at: CGPoint(x: cx + xOffset, y: cy + yOffset)) {
+                    hits.append(hit)
+                }
             }
+        }
+
+        var bestGroup: [(position: simd_float3, normal: simd_float3)] = []
+        for candidate in hits {
+            let group = hits.filter { simd_dot($0.normal, candidate.normal) >= consensusCosine }
+            if group.count > bestGroup.count {
+                bestGroup = group
+            }
+        }
+
+        // 합의 무리가 3개 미만이면 이번 수집 전체를 불신하고 건너뛴다 — 수집 중심을
+        // 등록하지 않으므로 다음 프레임에 같은 자리에서 자동으로 재추출을 시도한다.
+        guard bestGroup.count >= 3 else { return }
+        terrainSampleCollectionCenters.append(centerHit.position)
+        for sample in bestGroup {
+            terrainSamples.add(position: sample.position, normal: sample.normal)
         }
     }
 
@@ -316,23 +345,38 @@ class ARViewModel : ObservableObject{
         gridCellMeters = distances.reduce(0, +) / Float(distances.count)
     }
 
-    func runRangeFinder() {
+    /// 두 솔버(백+포워드, 백워드 전용)를 돌리고 결과를 @Published에 반영한다.
+    /// 합쳐서 수백 ms가 걸리는 계산이라 메인 스레드에서 동기로 돌리면 그대로 UI 행(hang)이
+    /// 된다 — 무거운 계산만 Task.detached(백그라운드)로 하고, await 복귀 후 MainActor에서
+    /// 결과를 반영한다. terrain은 스냅샷을 넘겨 계산 중 Reset이 원본을 비워도 안전하게
+    /// 하고, 계산 사이 Reset/재캡처로 볼·홀이 바뀌었으면 낡은 결과를 버린다.
+    @MainActor
+    func runRangeFinder() async {
         guard let ball = ballPosition, let hole = holePosition else {
             print("runRangeFinder: ball 또는 hole 위치가 없음")
             return
         }
         ballToHoleDistance = simd_distance(ball, hole)
-        let finder = PuttRangeFinder(terrain: terrainSamples, config: PuttRangeFinderConfig(rollingResistance: rollingResistance))
+        let finder = PuttRangeFinder(terrain: terrainSamples.snapshot(), config: PuttRangeFinderConfig(rollingResistance: rollingResistance))
 
-        let combinedStart = Date()
-        rangeFinderSolutions = finder.findSolutions(ballPosition: ball, holePosition: hole)
-        rangeFinderElapsedMs = Date().timeIntervalSince(combinedStart) * 1000
+        let result = await Task.detached(priority: .userInitiated) {
+            let combinedStart = Date()
+            let solutions = finder.findSolutions(ballPosition: ball, holePosition: hole)
+            let combinedMs = Date().timeIntervalSince(combinedStart) * 1000
 
-        let backwardOnlyStart = Date()
-        let backwardOnlyResult = finder.findSolutionsBackwardOnly(ballPosition: ball, holePosition: hole)
-        backwardOnlySolutions = backwardOnlyResult.solutions
-        backwardOnlyNote = backwardOnlyResult.note
-        backwardOnlyElapsedMs = Date().timeIntervalSince(backwardOnlyStart) * 1000
+            let backwardOnlyStart = Date()
+            let backwardOnly = finder.findSolutionsBackwardOnly(ballPosition: ball, holePosition: hole)
+            let backwardOnlyMs = Date().timeIntervalSince(backwardOnlyStart) * 1000
+            return (solutions: solutions, combinedMs: combinedMs, backwardOnly: backwardOnly, backwardOnlyMs: backwardOnlyMs)
+        }.value
+
+        // await 사이에 Reset되었거나 다른 볼/홀로 다시 캡처됐다면 낡은 결과이므로 버린다.
+        guard ballPosition == ball, holePosition == hole else { return }
+        rangeFinderSolutions = result.solutions
+        rangeFinderElapsedMs = result.combinedMs
+        backwardOnlySolutions = result.backwardOnly.solutions
+        backwardOnlyNote = result.backwardOnly.note
+        backwardOnlyElapsedMs = result.backwardOnlyMs
     }
 
     /// 볼→홀 직선을 forward 축으로 삼는 "퍼트 좌표계"에서, 주어진 수평 방향벡터의
