@@ -24,7 +24,7 @@ struct ContentView: View {
             // 실제 카메라/트래킹은 그대로). UI 컨트롤들은 이 스케일 밖에 있어서 안 커진다.
             ARViewContainer()
                 .environmentObject(arViewModel)
-                .edgesIgnoringSafeArea(.all)
+                .ignoresSafeArea()
                 .scaleEffect(CGFloat(arViewModel.displayZoom))
 
             // 화면 중앙 조준 아이콘 (볼/홀 캡처 대상 지점)
@@ -162,20 +162,26 @@ struct ContentView: View {
 
             ZoomCornerControl(arViewModel: arViewModel)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .zIndex(1) // 다른 오버레이 밑에 깔리지 않도록 최상단에 명시적으로 고정한다.
         }
         .ignoresSafeArea(edges: [.top, .bottom])
         .sheet(isPresented: $showSettings) {
             SettingsSheetView(arViewModel: arViewModel, showResults: $showResults)
         }
         .gesture(
-            MagnificationGesture()
-                .onChanged { value in
-                    let newValue = gridSpacingAtGestureStart * Float(value)
-                    arViewModel.terrainSampleGridSpacing = min(max(newValue, 30), 150)
-                }
-                .onEnded { _ in
-                    gridSpacingAtGestureStart = arViewModel.terrainSampleGridSpacing
-                }
+            // 스캔 단계(홀 캡처 전)에서만 격자 칸 크기를 조절한다 — 그 이후에는 이 제스처가
+            // 할 일이 없는데도 화면 전체를 덮고 있으면 ZoomCornerControl의 확대축소 핀치와
+            // 계속 충돌한다.
+            arViewModel.holePosition == nil
+                ? MagnificationGesture()
+                    .onChanged { value in
+                        let newValue = gridSpacingAtGestureStart * Float(value)
+                        arViewModel.terrainSampleGridSpacing = min(max(newValue, 30), 150)
+                    }
+                    .onEnded { _ in
+                        gridSpacingAtGestureStart = arViewModel.terrainSampleGridSpacing
+                    }
+                : nil
         )
     }
 
@@ -211,42 +217,72 @@ struct ActionButton: View {
     }
 }
 
+/// 눌렀을 때(진한 흰색)와 안 눌렀을 때(옅은 흰색)를 눈으로 구분할 수 있게 하는
+/// 버튼 스타일 — 기본 Button은 눌림 여부가 잘 안 보인다.
+private struct PressStateOpacityButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(.white.opacity(configuration.isPressed ? 1.0 : 0.6))
+    }
+}
+
 struct ZoomCornerControl: View {
     @ObservedObject var arViewModel: ARViewModel
     @State private var isDragging = false
     @State private var hideTask: DispatchWorkItem?
     @State private var zoomAtGestureStart: Float = 1.0
 
+    private let zoomStep: Float = 0.25
+
     var body: some View {
         VStack(spacing: 12) {
-            if isDragging {
-                VStack(spacing: 4) {
-                    Text(String(format: "%.1fx", arViewModel.displayZoom))
-                        .font(.caption2)
-                        .foregroundColor(.white)
+            VStack(spacing: 6) {
+                Text(String(format: "%.1fx", arViewModel.displayZoom))
+                    .font(.caption2)
+                    .foregroundColor(.white)
+
+                // 핀치 제스처를 못 찾는 사람들을 위해 항상 보이는 확대/축소 버튼도 둔다 —
+                // 핀치와 같은 setDisplayZoom을 쓰므로 둘 다 동시에 써도 값이 어긋나지 않는다.
+                Button(action: { arViewModel.setDisplayZoom(arViewModel.displayZoom + zoomStep) }) {
+                    Image(systemName: "plus.magnifyingglass")
+                        .font(.system(size: 16))
+                }
+                .buttonStyle(PressStateOpacityButtonStyle())
+
+                Button(action: { arViewModel.setDisplayZoom(arViewModel.displayZoom - zoomStep) }) {
+                    Image(systemName: "minus.magnifyingglass")
+                        .font(.system(size: 16))
+                }
+                .buttonStyle(PressStateOpacityButtonStyle())
+
+                if isDragging {
                     ZStack(alignment: .bottom) {
                         Capsule()
                             .fill(Color.white.opacity(0.15))
-                            .frame(width: 4, height: 120)
+                            .frame(width: 4, height: 80)
                         Capsule()
                             .fill(Color.white.opacity(0.8))
-                            .frame(width: 4, height: 120 * CGFloat((arViewModel.displayZoom - arViewModel.displayZoomMin) / (arViewModel.displayZoomMax - arViewModel.displayZoomMin)))
+                            .frame(width: 4, height: 80 * CGFloat((arViewModel.displayZoom - arViewModel.displayZoomMin) / (arViewModel.displayZoomMax - arViewModel.displayZoomMin)))
                     }
+                    .transition(.opacity)
                 }
-                .transition(.opacity)
             }
 
             Button(action: { arViewModel.saveSnapshot() }) {
                 Image(systemName: "camera.fill")
-                    .foregroundColor(.white.opacity(0.6))
                     .font(.system(size: 18))
             }
+            .buttonStyle(PressStateOpacityButtonStyle())
         }
         .padding(.trailing, 12)
         .padding(.top, 8)
         .frame(width: 90, height: 220, alignment: .top)
         .contentShape(Rectangle())
-        .gesture(
+        // 화면 전체를 덮는 ContentView의 격자-크기 조절용 MagnificationGesture와 같은
+        // 제스처 타입이 겹쳐서, 일반 .gesture()로는 부모 쪽에 우선권을 뺏겨 이 핀치가
+        // 아예 인식되지 않는 경우가 있었다 — highPriorityGesture로 이 컨트롤 영역
+        // 안에서는 확대축소가 항상 이기도록 한다.
+        .highPriorityGesture(
             MagnificationGesture()
                 .onChanged { value in
                     isDragging = true
@@ -275,13 +311,20 @@ struct SettingsSheetView: View {
             Form {
                 Section("스팀프미터") {
                     HStack {
-                        Button(action: { arViewModel.stimpReading = max(1.5, arViewModel.stimpReading - 0.1) }) {
-                            Image(systemName: "minus.circle.fill")
+                        Text("스팀프미터")
+                        Spacer()
+                        Text("\(arViewModel.stimpReading, specifier: "%.2f")m")
+                            .monospacedDigit()
+                            .frame(width: 60, alignment: .trailing)
+                        VStack(spacing: 4) {
+                            Button(action: { arViewModel.stimpReading = min(4.0, arViewModel.stimpReading + 0.1) }) {
+                                Image(systemName: "chevron.up")
+                            }
+                            Button(action: { arViewModel.stimpReading = max(1.5, arViewModel.stimpReading - 0.1) }) {
+                                Image(systemName: "chevron.down")
+                            }
                         }
-                        Text("Stimpmeter: \(arViewModel.stimpReading, specifier: "%.2f")m")
-                        Button(action: { arViewModel.stimpReading = min(4.0, arViewModel.stimpReading + 0.1) }) {
-                            Image(systemName: "plus.circle.fill")
-                        }
+                        .font(.caption)
                     }
                 }
 

@@ -78,7 +78,14 @@ class ARViewModel : ObservableObject{
 
     /// 스팀프미터 측정값(미터) — 표준 스팀프 램프 방출 속도(1.83m/s)로 굴렸을 때
     /// 이 거리만큼 가다 멈추는 그린 속도. rollingResistance = v² / (2 × stimpReading)로 환산한다.
-    @Published var stimpReading: Float = 2.70
+    /// UserDefaults에 저장해 앱을 다시 시작해도 마지막으로 설정한 값을 기억한다.
+    @Published var stimpReading: Float = UserDefaults.standard.object(forKey: "stimpReading") != nil
+        ? UserDefaults.standard.float(forKey: "stimpReading")
+        : 2.70 {
+        didSet {
+            UserDefaults.standard.set(stimpReading, forKey: "stimpReading")
+        }
+    }
     private let stimpReleaseSpeed: Float = 1.83
     var rollingResistance: Float {
         (stimpReleaseSpeed * stimpReleaseSpeed) / (2 * stimpReading)
@@ -414,13 +421,13 @@ extension ARViewModel {
     /// 비침). 텍스처 생성이 실패하면(드묾) 기존 단색 사각형으로 대체한다.
     static func focusEntityStyle() -> FocusEntityComponent.Style {
         do {
-            let onTexture = try textureFromSymbol(named: "plus", color: .blue, backgroundColor: .white, backgroundAlpha: 0.0)
+            let onTexture = try textureFromSymbol(named: "plus", color: .white, backgroundColor: .white, backgroundAlpha: 0.0)
             let offTexture = try textureFromSymbol(named: "plus", color: .yellow, backgroundColor: .white, backgroundAlpha: 0.0)
             let nonTrackingTexture = try textureFromSymbol(named: "plus", color: .green, backgroundColor: .white, backgroundAlpha: 0.0)
             return .colored(onColor: onTexture, offColor: offTexture, nonTrackingColor: nonTrackingTexture)
         } catch {
             print("⚠️ FocusEntity 텍스처 생성 실패, 단색 사각형으로 대체: \(error)")
-            return .colored(onColor: .color(.blue), offColor: .color(.yellow), nonTrackingColor: .color(.green))
+            return .colored(onColor: .color(.white), offColor: .color(.yellow), nonTrackingColor: .color(.green))
         }
     }
 }

@@ -22,6 +22,7 @@ struct ARViewContainer: UIViewRepresentable {
         weak var arView : ARView?
         var cancellables : Set<AnyCancellable> = []
         var updateSubscription: Cancellable?
+        var didPinToSuperview = false
 
         init(parent: ARViewContainer) {
             self.parent = parent
@@ -187,17 +188,19 @@ struct ARViewContainer: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: ARView, context: Context) {
-        //        guard !ARViewContainer.isUpdatingScreen else {return}
-        //        DispatchQueue.main.async {
-        //            ARViewContainer.isUpdatingScreen = true
-        //        }
-        
-        if let parentView = uiView.superview {
-            if let arView = context.coordinator.arView {
-                arView.frame = parentView.bounds
-            }
-        }
-        
+        // 코칭 오버레이(makeUIView)와 같은 방식 — 수동 frame 대입(매 업데이트마다
+        // superview.bounds로 덮어쓰기)은 SwiftUI 자체 레이아웃 타이밍과 어긋나면 화면이
+        // 실제 전체 화면보다 작게 굳어버릴 수 있다. Auto Layout 제약조건으로 한 번만
+        // 고정해서 이후 레이아웃 변화(회전, 세이프에어리어 등)에도 항상 꽉 채우게 한다.
+        guard !context.coordinator.didPinToSuperview, let parentView = uiView.superview else { return }
+        uiView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            uiView.leadingAnchor.constraint(equalTo: parentView.leadingAnchor),
+            uiView.trailingAnchor.constraint(equalTo: parentView.trailingAnchor),
+            uiView.topAnchor.constraint(equalTo: parentView.topAnchor),
+            uiView.bottomAnchor.constraint(equalTo: parentView.bottomAnchor)
+        ])
+        context.coordinator.didPinToSuperview = true
     }
     
     
