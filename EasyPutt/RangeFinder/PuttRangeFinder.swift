@@ -536,7 +536,7 @@ final class PuttRangeFinder {
 
         for step in 0..<config.maxForwardSteps {
             guard let normal = terrain.nearestNormal(to: ball.position) else { return nil }
-            ball.updateFromTorque(deltaTime: config.deltaTime, surfaceNormal: normal)
+            ball.updateForwardWithSlip(deltaTime: config.deltaTime, surfaceNormal: normal)
 
             // 스텝 끝점만 보지 않고, 직전~다음 위치를 잇는 선분 전체에서 홀컵까지의 최소
             // 거리를 본다 — 안 그러면 빠른 공이 좁은 홀컵 반경(3.3cm)을 두 샘플 사이에서
