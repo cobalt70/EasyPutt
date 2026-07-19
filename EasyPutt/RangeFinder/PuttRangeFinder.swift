@@ -153,9 +153,20 @@ final class PuttRangeFinder {
     /// forward 보정만 얹는다. 예전에는 backwardCandidate()의 단순 추측(최대경사 또는 직선,
     /// 단일 시도)을 시드로 썼는데, 이제 B 쪽에서 이미 검증한(양방향 탐색 + 데드존 안전) 훨씬
     /// 정확한 시드를 그대로 재사용하므로 verify()가 처리해야 할 보정량도 줄어든다.
+    ///
+    /// backwardOnlySolve가 nil이면(예: 미끄럼 구간 마찰 때문에 그 안의 고정 overrun
+    /// 래더로는 어느 것도 forward 검증을 통과 못 하는 완만한 경사) backwardCandidate()의
+    /// 단순 근사 시드로 대체한다 — B는 forward 보정이 없어 이 상황에서 정말로 해를 못
+    /// 찾은 것으로 보는 게 맞지만(그래서 backwardOnlySolve 자체는 안 건드린다), B+F는
+    /// 원래도 verify()의 반복 보정을 갖고 있으니 시드가 덜 정확해도 그 보정으로 수렴할
+    /// 여지가 있다 — B+F가 B보다 못한 결과(해를 못 찾음)를 내는 걸 막는다.
     func findSolutions(ballPosition: simd_float3, holePosition: simd_float3) -> [PuttSolution] {
         var solutions: [PuttSolution] = []
-        guard let candidate = backwardOnlySolve(ballPosition: ballPosition, holePosition: holePosition) else {
+        let candidate = backwardOnlySolve(ballPosition: ballPosition, holePosition: holePosition)
+            ?? config.holeCrossingSpeeds.lazy.compactMap {
+                self.backwardCandidate(holePosition: holePosition, ballPosition: ballPosition, holeCrossingSpeed: $0)
+            }.first
+        guard let candidate else {
             return solutions
         }
 
