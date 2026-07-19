@@ -2,6 +2,9 @@
 //  AimDescription.swift
 //  EasyPutt
 //
+//  Created by Gi Woo Kim on 7/19/26.
+//  Updated by Gi Woo Kim on 7/19/26.
+//
 
 import Foundation
 

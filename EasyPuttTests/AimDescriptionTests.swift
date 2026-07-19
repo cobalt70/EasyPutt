@@ -1,3 +1,11 @@
+//
+//  AimDescriptionTests.swift
+//  EasyPuttTests
+//
+//  Created by Gi Woo Kim on 7/19/26.
+//  Updated by Gi Woo Kim on 7/19/26.
+//
+
 import XCTest
 @testable import EasyPutt
 
