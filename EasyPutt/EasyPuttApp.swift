@@ -43,6 +43,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         window.rootViewController = UIHostingController(rootView: contentView)
         self.window = window
         window.makeKeyAndVisible()
+       
+        DispatchQueue.main.async {
+            print("UIScreen =", UIScreen.main.bounds)
+            print("window =", window.frame)
+            print("root =", window.rootViewController!.view.frame)
+            print("nativeBounds =", UIScreen.main.nativeBounds)
+            print("scale =", UIScreen.main.scale)
+            print(ProcessInfo.processInfo.isiOSAppOnMac)
+            print(UIDevice.current.model)
+        }
         return true
     }
 

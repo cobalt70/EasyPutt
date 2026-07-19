@@ -16,7 +16,7 @@ struct ContentView: View {
     @State private var showResults = false
     @State private var showSettings = false
     @State private var gridSpacingAtGestureStart: Float = 60
-    @State private var resultCardExpanded: Bool = true
+    @State private var resultCardHidden: Bool = false
 
     var body: some View {
         ZStack {
@@ -26,6 +26,8 @@ struct ContentView: View {
                 .environmentObject(arViewModel)
                 .ignoresSafeArea()
                 .scaleEffect(CGFloat(arViewModel.displayZoom))
+//            Color.red
+//                .ignoresSafeArea()
 
             // 화면 중앙 조준 아이콘 (볼/홀 캡처 대상 지점)
             if arViewModel.holePosition == nil {
@@ -73,37 +75,36 @@ struct ContentView: View {
 
             // 상단 컨트롤 + (필요시) 정보 패널 + 하단 바 — 전부 세이프에어리어 무시하고
             // 화면 맨 위/맨 아래 끝에 붙인다.
-            VStack(spacing: 8) {
+            VStack(alignment: .trailing, spacing: 8) {
                 VStack(spacing: 4) {
                     if let aim = aimDescription, let distance = arViewModel.ballToHoleDistance, let adjusted = arViewModel.adjustedDistance {
-                        Button(action: { resultCardExpanded.toggle() }) {
-                            if resultCardExpanded {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("🎯 \(aim)")
-                                    Text("실제 거리: \(distance, specifier: "%.2f")m")
-                                    Text("평지 환산: \(adjusted, specifier: "%.2f")m")
-                                }
-                            } else {
-                                Text("🎯 \(aim)")
-                            }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("🎯 \(aim)")
+                            Text("📏 실제 거리: \(distance, specifier: "%.2f")m")
+                            Text("📐 평지 환산: \(adjusted, specifier: "%.2f")m")
                         }
-                        .font(.caption2)
+                        .font(.footnote)
                         .foregroundColor(.white)
-                        .buttonStyle(.plain)
+                        .padding(12)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(16)
+                        .opacity(resultCardHidden ? 0 : 1)
+                        .contentShape(Rectangle())
+                        .onTapGesture { withAnimation { resultCardHidden.toggle() } }
                     }
                 }
-                .padding(8)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(12)
 
                 Spacer()
 
                 HStack(spacing: 0) {
                     HStack(spacing: 8) {
-                        ActionButton(title: "설정", color: .gray) {
-                            showSettings = true
+                        Button(action: { showSettings = true }) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(Color.gray))
                         }
-                        .frame(width: 60)
 
                         Spacer(minLength: 0)
                     }
@@ -130,7 +131,7 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         Spacer(minLength: 0)
 
-                        ActionButton(title: "Reset", color: .orange) {
+                        Button(action: {
                             guard let arView = arViewModel.arView else { return }
                             arViewModel.ballPosition = nil
                             arViewModel.holePosition = nil
@@ -147,26 +148,62 @@ struct ContentView: View {
                             removeAnchorWithName(for: arView, name: "FlagMarkerAnchor")
                             showResults = false
                             print("Reset complete")
+                        }) {
+                            Text("⛳️")
+                                .font(.system(size: 22))
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(Color.orange))
                         }
-                        .frame(width: 70)
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 6)
-                .background(.ultraThinMaterial)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 16)
+                .background(
+                    .ultraThinMaterial,
+                    in: UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 24)
+                )
             }
             .padding(.horizontal, 8)
-            .padding(.top, 4)
+            .padding(.top, 60) // 노치/다이나믹 아일랜드 아래로 내려서 안 가리게.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            ZoomCornerControl(arViewModel: arViewModel)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .zIndex(1) // 다른 오버레이 밑에 깔리지 않도록 최상단에 명시적으로 고정한다.
+            GeometryReader { geo in
+                ZoomCornerControl(arViewModel: arViewModel)
+                    .position(x: geo.size.width - 50, y: geo.size.height * 0.6 - 50)
+            }
+            .zIndex(1) // 다른 오버레이 밑에 깔리지 않도록 최상단에 명시적으로 고정한다.
+
+            Button(action: { arViewModel.saveSnapshot() }) {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 26))
+                    .foregroundColor(.white)
+                    .frame(width: 56, height: 56)
+                    .background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .padding(.trailing, 12)
+            .padding(.bottom, 88) // 하단 컨트롤 바와 겹치지 않도록 그 위에 띄운다.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .zIndex(1)
         }
-        .ignoresSafeArea(edges: [.top, .bottom])
+        .ignoresSafeArea(.all)
+        .onAppear {
+            print("ContentView displayZoom =", arViewModel.displayZoom)
+        }
+        .onChange(of: arViewModel.displayZoom) { oldValue, newValue in
+            print("displayZoom changed:", oldValue, "->", newValue)
+        }
+        .onChange(of: arViewModel.holePosition) { _, newValue in
+            // 홀컵을 찍어 계산이 끝나면(=holePosition이 생기면) 이전에 숨겨놨었더라도
+            // 결과가 나오는 순간엔 다시 보이게 한다.
+            if newValue != nil {
+                resultCardHidden = false
+            }
+        }
         .sheet(isPresented: $showSettings) {
             SettingsSheetView(arViewModel: arViewModel, showResults: $showResults)
+                .presentationDragIndicator(.visible)
         }
         .gesture(
             // 스캔 단계(홀 캡처 전)에서만 격자 칸 크기를 조절한다 — 그 이후에는 이 제스처가
@@ -197,26 +234,6 @@ struct ContentView: View {
     ContentView()
 }
 
-struct ActionButton: View {
-    let title: String
-    var color: Color = .blue
-    var disabled: Bool = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption)
-                .padding(10)
-                .frame(maxWidth: .infinity)
-                .background(color)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-        }
-        .disabled(disabled)
-    }
-}
-
 /// 눌렀을 때(진한 흰색)와 안 눌렀을 때(옅은 흰색)를 눈으로 구분할 수 있게 하는
 /// 버튼 스타일 — 기본 Button은 눌림 여부가 잘 안 보인다.
 private struct PressStateOpacityButtonStyle: ButtonStyle {
@@ -236,47 +253,42 @@ struct ZoomCornerControl: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            VStack(spacing: 6) {
-                Text(String(format: "%.1fx", arViewModel.displayZoom))
-                    .font(.caption2)
-                    .foregroundColor(.white)
-
-                // 핀치 제스처를 못 찾는 사람들을 위해 항상 보이는 확대/축소 버튼도 둔다 —
-                // 핀치와 같은 setDisplayZoom을 쓰므로 둘 다 동시에 써도 값이 어긋나지 않는다.
-                Button(action: { arViewModel.setDisplayZoom(arViewModel.displayZoom + zoomStep) }) {
-                    Image(systemName: "plus.magnifyingglass")
-                        .font(.system(size: 16))
-                }
-                .buttonStyle(PressStateOpacityButtonStyle())
-
-                Button(action: { arViewModel.setDisplayZoom(arViewModel.displayZoom - zoomStep) }) {
-                    Image(systemName: "minus.magnifyingglass")
-                        .font(.system(size: 16))
-                }
-                .buttonStyle(PressStateOpacityButtonStyle())
-
-                if isDragging {
-                    ZStack(alignment: .bottom) {
-                        Capsule()
-                            .fill(Color.white.opacity(0.15))
-                            .frame(width: 4, height: 80)
-                        Capsule()
-                            .fill(Color.white.opacity(0.8))
-                            .frame(width: 4, height: 80 * CGFloat((arViewModel.displayZoom - arViewModel.displayZoomMin) / (arViewModel.displayZoomMax - arViewModel.displayZoomMin)))
-                    }
-                    .transition(.opacity)
-                }
-            }
-
-            Button(action: { arViewModel.saveSnapshot() }) {
-                Image(systemName: "camera.fill")
-                    .font(.system(size: 18))
+            // 핀치 제스처를 못 찾는 사람들을 위해 항상 보이는 확대/축소 버튼도 둔다 —
+            // 핀치와 같은 setDisplayZoom을 쓰므로 둘 다 동시에 써도 값이 어긋나지 않는다.
+            Button(action: { arViewModel.setDisplayZoom(arViewModel.displayZoom + zoomStep) }) {
+                Image(systemName: "plus.magnifyingglass")
+                    .font(.system(size: 24))
             }
             .buttonStyle(PressStateOpacityButtonStyle())
+
+            Color.clear.frame(width: 1, height: 20)
+
+            Text(String(format: "%.1fx", arViewModel.displayZoom))
+                .font(.system(size: 18))
+                .foregroundColor(.white)
+
+            Color.clear.frame(width: 1, height: 20)
+
+            Button(action: { arViewModel.setDisplayZoom(arViewModel.displayZoom - zoomStep) }) {
+                Image(systemName: "minus.magnifyingglass")
+                    .font(.system(size: 24))
+            }
+            .buttonStyle(PressStateOpacityButtonStyle())
+
+            if isDragging {
+                ZStack(alignment: .bottom) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: 4, height: 80)
+                    Capsule()
+                        .fill(Color.white.opacity(0.8))
+                        .frame(width: 4, height: 80 * CGFloat((arViewModel.displayZoom - arViewModel.displayZoomMin) / (arViewModel.displayZoomMax - arViewModel.displayZoomMin)))
+                }
+                .transition(.opacity)
+            }
         }
-        .padding(.trailing, 12)
-        .padding(.top, 8)
-        .frame(width: 90, height: 220, alignment: .top)
+        .padding(.trailing, 4)
+        .frame(width: 100, height: 400, alignment: .trailing)
         .contentShape(Rectangle())
         // 화면 전체를 덮는 ContentView의 격자-크기 조절용 MagnificationGesture와 같은
         // 제스처 타입이 겹쳐서, 일반 .gesture()로는 부모 쪽에 우선권을 뺏겨 이 핀치가
@@ -310,21 +322,9 @@ struct SettingsSheetView: View {
         NavigationView {
             Form {
                 Section("스팀프미터") {
-                    HStack {
-                        Text("스팀프미터")
-                        Spacer()
-                        Text("\(arViewModel.stimpReading, specifier: "%.2f")m")
+                    Stepper(value: $arViewModel.stimpReading, in: 1.5...4.0, step: 0.1) {
+                        Text("\(arViewModel.stimpReading, specifier: "%.2f") m")
                             .monospacedDigit()
-                            .frame(width: 60, alignment: .trailing)
-                        VStack(spacing: 4) {
-                            Button(action: { arViewModel.stimpReading = min(4.0, arViewModel.stimpReading + 0.1) }) {
-                                Image(systemName: "chevron.up")
-                            }
-                            Button(action: { arViewModel.stimpReading = max(1.5, arViewModel.stimpReading - 0.1) }) {
-                                Image(systemName: "chevron.down")
-                            }
-                        }
-                        .font(.caption)
                     }
                 }
 
@@ -367,7 +367,7 @@ struct SettingsSheetView: View {
         if let rel = arViewModel.puttRelative(solution.direction) {
             let aimLine: String = {
                 guard let centimeters = arViewModel.aimOffsetCentimeters(rel) else { return "" }
-                return " / 홀컵 기준 \(String(format: "%+.1f", centimeters))cm"
+                return " / \(describeAimOffset(centimeters: centimeters)) (\(String(format: "%+.1f", centimeters))cm)"
             }()
             Text("speed \(solution.speed, specifier: "%.2f") / 우: \(rel.right, specifier: "%.2f") 전진: \(rel.forward, specifier: "%.2f")\(aimLine)")
                 .font(.caption2)
@@ -375,14 +375,14 @@ struct SettingsSheetView: View {
             if let boundaryA = solution.directionBoundaryA,
                let relA = arViewModel.puttRelative(boundaryA),
                let centimetersA = arViewModel.aimOffsetCentimeters(relA) {
-                Text("Boundary A: 홀컵 기준 \(String(format: "%+.1f", centimetersA))cm 조준")
+                Text("Boundary A: \(describeAimOffset(centimeters: centimetersA)) (\(String(format: "%+.1f", centimetersA))cm) 조준")
                     .font(.caption2)
                     .foregroundColor(boundaryAColor)
             }
             if let boundaryB = solution.directionBoundaryB,
                let relB = arViewModel.puttRelative(boundaryB),
                let centimetersB = arViewModel.aimOffsetCentimeters(relB) {
-                Text("Boundary B: 홀컵 기준 \(String(format: "%+.1f", centimetersB))cm 조준")
+                Text("Boundary B: \(describeAimOffset(centimeters: centimetersB)) (\(String(format: "%+.1f", centimetersB))cm) 조준")
                     .font(.caption2)
                     .foregroundColor(boundaryBColor)
             }

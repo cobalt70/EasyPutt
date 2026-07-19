@@ -30,7 +30,11 @@ func describeAimOffset(centimeters: Float) -> String {
         return "\(direction) 홀컵 밖 (공 1개)"
     default:
         let cups = (aimInMeters - cupRadius) / cupSize
-        let roundedCups = round(cups * 2) / 2
+        // cups가 정확히 0.5 단위 경계(예: 0.75)에 걸리면 그 앞 계산의 부동소수점 오차로
+        // 반올림이 아래(0.5)/위(1.0)로 흔들릴 수 있다 — 0.5컵 단위로 스냅하기 전에
+        // 먼저 밀리컵 단위로 반올림해 오차를 죽인다.
+        let cupsStable = (cups * 1000).rounded() / 1000
+        let roundedCups = (cupsStable * 2).rounded() / 2
         return String(format: "%@ %.1f컵 아웃", direction, roundedCups)
     }
 }

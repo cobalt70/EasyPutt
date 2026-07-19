@@ -132,54 +132,60 @@ class GolfBall: ObservableObject {
     func updateForwardWithSlip(deltaTime dt: Float, surfaceNormal n: simd_float3) {
         let gravityParallel = gravity - simd_dot(gravity, n) * n
 
-        // 접촉점(중심에서 -radius*n 방향)의 지면 대비 상대속도.
-        let r = -radius * n
-        let vContact = velocity + simd_cross(angularVelocity, r)
+        // 1. 접촉점의 지면 대비 상대속도 (v_contact = v - R * (w x n))
+        let vContact = velocity - radius * simd_cross(angularVelocity, n)
         let slipSpeed = simd_length(vContact)
 
         let acceleration: simd_float3
         let rotationAxis: simd_float3
-        let isSlipping = slipSpeed > Self.slipThreshold
+        let isSlipping = slipSpeed > GolfBall.slipThreshold
 
         if isSlipping {
-            // 미끄럼 구간: 접촉점 상대속도 기준 마찰력이 병진과 회전에 동시에 작용한다.
-            // 5/7 계수(순수구름 구속조건 전제)는 아직 적용하지 않는다.
+            // A. 미끄럼 구간: 운동 마찰력이 선가속도와 각속도에 동시에 작용 (5/7 계수 미적용)
             let normalAccel = -simd_dot(gravity, n)
             let frictionAccMag = muKinetic * normalAccel
             let frictionDir = -vContact / slipSpeed
-            let frictionAcc = frictionDir * frictionAccMag
+            
+            acceleration = gravityParallel + (frictionDir * frictionAccMag)
 
-            acceleration = gravityParallel + frictionAcc
-
+            // 회전축 계산 (마찰력 방향과 법선 벡터의 외적)
             let crossVec = simd_cross(frictionDir, n)
             rotationAxis = simd_length(crossVec) > 0.0001 ? simd_normalize(crossVec) : simd_float3(0, 1, 0)
-            let torqueMag = radius * frictionAccMag * mass
-            let inertia = (2.0 / 5.0) * mass * pow(radius, 2)
-            let angularAccel = torqueMag / inertia
+            
+            // 각가속도 계산 단순화: alpha = 2.5 * a_k / R (질량 소거)
+            let angularAccel = (2.5 * frictionAccMag) / radius
             angularVelocity += rotationAxis * angularAccel * dt
         } else {
-            // 순수구름 구간: 기존 updateFromTorque와 동일한 물리.
+            // B. 순수구름 구간: 기존 updateFromTorque와 동일한 회전/선속도 연동 물리
             let accelMag = simd_length(gravityParallel) * (5.0 / 7.0)
             acceleration = accelMag > 0.0001 ? simd_normalize(gravityParallel) * accelMag : .zero
-            rotationAxis = simd_length(velocity) > 0.0001 ? simd_normalize(simd_cross(n, simd_normalize(velocity))) : simd_float3(0, 1, 0)
+            
+            let vCross = simd_cross(n, velocity)
+            rotationAxis = simd_length(vCross) > 0.0001 ? simd_normalize(vCross) : simd_float3(0, 1, 0)
         }
 
+        // 2. 선속도 및 위치 업데이트
         let entryVelocity = velocity
         position += entryVelocity * dt + 0.5 * acceleration * dt * dt
         velocity += acceleration * dt
 
-        if isSlipping {
-            // 마찰이 이미 위에서 acceleration에 반영됐으므로 applyRollingResistance는
-            // 호출하지 않는다(구름저항은 순수구름 상태에서만 성립하는 별개 메커니즘).
-        } else {
+        // 3. 구름저항 및 각속도 제약 적용
+        if !isSlipping {
+            // 마찰이 가속도에 반영되지 않는 구름 상태에서만 구름저항 적용 및 회전속도 강제 동기화
             applyRollingResistance(deltaTime: dt)
-            guard simd_length(velocity) > 0.0001 else { return }
-            let targetAngular = simd_length(velocity) / radius
-            angularVelocity = rotationAxis * targetAngular
+            
+            let speed = simd_length(velocity)
+            if speed > 0.0001 {
+                angularVelocity = rotationAxis * (speed / radius)
+            } else {
+                angularVelocity = .zero
+            }
         }
 
-        let angle = simd_length(angularVelocity) * dt
-        if angle.isFinite && simd_length(rotationAxis) > 0.0001 {
+        // 4. 공의 3D 회전 상태 업데이트
+        let spinSpeed = simd_length(angularVelocity)
+        if spinSpeed > 0.0001, rotationAxis != .zero {
+            let angle = spinSpeed * dt
             let deltaRotation = simd_quatf(angle: angle, axis: rotationAxis)
             rotation = simd_normalize(deltaRotation * rotation)
         }

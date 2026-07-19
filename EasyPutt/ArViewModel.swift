@@ -52,6 +52,7 @@ class ARViewModel : ObservableObject{
     @Published var displayZoom: Float = 1.0
     let displayZoomMin: Float = 1.0
     let displayZoomMax: Float = 3.0
+    
     func setDisplayZoom(_ value: Float) {
         displayZoom = min(max(value, displayZoomMin), displayZoomMax)
     }
@@ -420,14 +421,13 @@ extension ARViewModel {
     /// 불투명 사각형이 아니라 "+" 모양만 보이게 한다(사각형 안의 실제 골프공이 그대로
     /// 비침). 텍스처 생성이 실패하면(드묾) 기존 단색 사각형으로 대체한다.
     static func focusEntityStyle() -> FocusEntityComponent.Style {
+        let mesh = MeshResource.generatePlane(width: 0.08, depth: 0.08) // 기본 0.1m에서 20% 축소
         do {
-            let onTexture = try textureFromSymbol(named: "plus", color: .white, backgroundColor: .white, backgroundAlpha: 0.0)
-            let offTexture = try textureFromSymbol(named: "plus", color: .yellow, backgroundColor: .white, backgroundAlpha: 0.0)
-            let nonTrackingTexture = try textureFromSymbol(named: "plus", color: .green, backgroundColor: .white, backgroundAlpha: 0.0)
-            return .colored(onColor: onTexture, offColor: offTexture, nonTrackingColor: nonTrackingTexture)
+            let texture = try textureFromSymbol(named: "plus", color: .yellow, backgroundColor: .blue, backgroundAlpha: 1.0)
+            return .colored(onColor: texture, offColor: texture, nonTrackingColor: texture, mesh: mesh)
         } catch {
             print("⚠️ FocusEntity 텍스처 생성 실패, 단색 사각형으로 대체: \(error)")
-            return .colored(onColor: .color(.white), offColor: .color(.yellow), nonTrackingColor: .color(.green))
+            return .colored(onColor: .color(.blue), offColor: .color(.blue), nonTrackingColor: .color(.blue), mesh: mesh)
         }
     }
 }

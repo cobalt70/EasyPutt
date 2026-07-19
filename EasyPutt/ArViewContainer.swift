@@ -184,6 +184,16 @@ struct ARViewContainer: UIViewRepresentable {
             ])
         }
     //    arViewModel.arView?.debugOptions.insert(.showPhysics)
+        DispatchQueue.main.async {
+            guard let arView = arViewModel.arView else { return }
+
+            print("========== ARView ==========")
+            print("displayZoom =", arViewModel.displayZoom)
+            print("frame       =", arView.frame)
+            print("bounds      =", arView.bounds)
+            print("superview   =", String(describing: arView.superview?.frame))
+            print("============================")
+        }
         return arViewModel.arView!
     }
     
@@ -194,13 +204,20 @@ struct ARViewContainer: UIViewRepresentable {
         // 고정해서 이후 레이아웃 변화(회전, 세이프에어리어 등)에도 항상 꽉 채우게 한다.
         guard !context.coordinator.didPinToSuperview, let parentView = uiView.superview else { return }
         uiView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            uiView.leadingAnchor.constraint(equalTo: parentView.leadingAnchor),
-            uiView.trailingAnchor.constraint(equalTo: parentView.trailingAnchor),
-            uiView.topAnchor.constraint(equalTo: parentView.topAnchor),
-            uiView.bottomAnchor.constraint(equalTo: parentView.bottomAnchor)
-        ])
+//        NSLayoutConstraint.activate([
+//            uiView.leadingAnchor.constraint(equalTo: parentView.leadingAnchor),
+//            uiView.trailingAnchor.constraint(equalTo: parentView.trailingAnchor),
+//            uiView.topAnchor.constraint(equalTo: parentView.topAnchor),
+//            uiView.bottomAnchor.constraint(equalTo: parentView.bottomAnchor)
+//        ])
         context.coordinator.didPinToSuperview = true
+        DispatchQueue.main.async {
+                print("========== updateUIView ==========")
+                print("frame =", uiView.frame)
+                print("bounds =", uiView.bounds)
+                print("super =", String(describing: uiView.superview?.bounds))
+                print("===============================")
+            }
     }
     
     
@@ -227,6 +244,9 @@ struct ARViewContainer: UIViewRepresentable {
         guard let arView = arViewModel.arView else {
             return
         }
+        arView.backgroundColor = .yellow
+        arView.frame = UIScreen.main.bounds
+        arView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         let configuration = ARWorldTrackingConfiguration()
         configuration.planeDetection = [.horizontal, .vertical ]
         //   configuration.sceneReconstruction = .mesh
@@ -364,7 +384,7 @@ func drawTerrainSampleMarkers(_ samples: [TerrainSample], in arView: ARView) {
 
         for sample in samples {
             let marker = ModelEntity(
-                mesh: .generateSphere(radius: 0.02),
+                mesh: .generateSphere(radius: 0.006),
                 materials: [SimpleMaterial(color: .yellow, isMetallic: false)]
             )
             marker.position = sample.position
@@ -379,8 +399,8 @@ func drawTerrainSampleMarkers(_ samples: [TerrainSample], in arView: ARView) {
                 let normalLine = makeArrowSegment(
                     from: sample.position,
                     to: sample.position + horizontalTilt,
-                    color: .cyan,
-                    radius: 0.002
+                    color: .blue,
+                    radius: 0.001
                 )
                 anchor.addChild(normalLine)
             }
