@@ -155,9 +155,9 @@ Expected: BUILD FAILED — `updateForwardWithSlip`가 아직 없어서 컴파일
 
         let acceleration: simd_float3
         let rotationAxis: simd_float3
-        let isSliding = slipSpeed > Self.slipThreshold
+        let isSlipping = slipSpeed > Self.slipThreshold
 
-        if isSliding {
+        if isSlipping {
             // 미끄럼 구간: 접촉점 상대속도 기준 마찰력이 병진과 회전에 동시에 작용한다.
             // 5/7 계수(순수구름 구속조건 전제)는 아직 적용하지 않는다.
             let normalAccel = -simd_dot(gravity, n)
@@ -184,7 +184,7 @@ Expected: BUILD FAILED — `updateForwardWithSlip`가 아직 없어서 컴파일
         position += entryVelocity * dt + 0.5 * acceleration * dt * dt
         velocity += acceleration * dt
 
-        if isSliding {
+        if isSlipping {
             // 마찰이 이미 위에서 acceleration에 반영됐으므로 applyRollingResistance는
             // 호출하지 않는다(구름저항은 순수구름 상태에서만 성립하는 별개 메커니즘).
         } else {
