@@ -15,7 +15,7 @@ struct ContentView: View {
     @StateObject var arViewModel = ARViewModel()
     @State private var showResults = false
     @State private var showSettings = false
-    @State private var gridSpacingAtGestureStart: Float = 60
+    @State private var gridSpacingAtGestureStart: Float = 70
     @State private var resultCardHidden: Bool = false
 
     var body: some View {
