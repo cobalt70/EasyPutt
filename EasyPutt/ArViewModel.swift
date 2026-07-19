@@ -30,6 +30,10 @@ class ARViewModel : ObservableObject{
     /// 화면에 보여줄 3x3 조준 격자선의 칸 크기(포인트) — 순전히 시각적 가이드이며,
     /// 실제 수집 지점(화면 중앙)에는 영향을 주지 않는다.
     @Published var terrainSampleGridSpacing: Float = 70
+    /// 법선벡터 수집 방식 — true: 꼭짓점 좌표 16개에서 삼각형 외적으로 직접 계산
+    /// (넓은 베이스라인, 오차 ~1도), false: ARKit per-hit 법선을 그대로 수집
+    /// (짧은 베이스라인 미분, 오차 5~10도). 설정 화면에서 전환해 비교할 수 있다.
+    @Published var computeNormalsFromPositions: Bool = true
     /// 새 수집을 실행하려면 조준 지점이 "지금까지의 모든 수집 지점"으로부터
     /// 최소 이만큼(미터) 떨어져 있어야 한다 — 제자리 정체나 경로가 교차할 때
     /// 중복 수집을 막는다. 실제로는 매 틱 gridCellMeters(격자 한 칸의 실제 거리)를
@@ -50,8 +54,8 @@ class ARViewModel : ObservableObject{
     /// 용도라 스캔이 끝난 뒤(홀 캡처 이후) 주로 쓴다. 우측 상단 코너의 핀치 제스처로
     /// 1.0~3.0 사이를 연속적으로 조절한다.
     @Published var displayZoom: Float = 1.0
-    let displayZoomMin: Float = 1.0
-    let displayZoomMax: Float = 3.0
+    let displayZoomMin: Float = 0.5
+    let displayZoomMax: Float = 2.5
     
     func setDisplayZoom(_ value: Float) {
         displayZoom = min(max(value, displayZoomMin), displayZoomMax)
@@ -219,46 +223,119 @@ class ARViewModel : ObservableObject{
         }
         guard !tooClose else { return }
 
-        // 지면(수평)에서 45도를 넘게 기운 법선은 실제 그린 기울기일 리 없고, 의자다리·케이블
-        // 같은 잡동사니에 맞은 스퓨리어스 raycast일 가능성이 높다 — 그런 히트는 쓰지 않는다.
-        let maxTiltCosine: Float = cos(45 * .pi / 180)
-        // 9개 히트 중 법선이 서로 20도 이내로 맞는 최대 무리(합의 클러스터)만 저장한다 —
-        // 소수 아웃라이어는 무리에 못 끼어 수집 단계에서 제거된다. 특정 기준점(중앙)과
-        // 비교하는 게 아니라 상호 비교로 최대 무리를 뽑으므로, 중앙 자신이 아웃라이어여도
-        // 안전하다. (꼭짓점까지 25개를 뽑는 버전은 매 프레임 raycast 부하로 메인 스레드
-        // 행(hang)을 유발해서 칸 중심 9개로 유지한다.)
+        // 지면(수평)에서 20도를 넘게 기운 법선은 실제 그린 기울기(몇 도 수준)일 리 없고,
+        // 잡동사니에 맞았거나 비스듬한 스캔 각도에서 생긴 편향 히트다 — 쓰지 않는다.
+        // (45도로 시작했으나 15~20도짜리 가짜 경사 주장들이 통과해 20도로 조임.)
+        let maxTiltCosine: Float = cos(20 * Float.pi / 180)
+        // 각 샘플을 "극단값(가장 기운 것·가장 덜 기운 것)과 자기 자신을 뺀 나머지의 평균
+        // 법선"과 비교해, 20도 넘게 벌어지면 탈락시킨다(트림 + leave-one-out). 상호 합의
+        // 클러스터(O(n²))보다 계산이 가볍고, 극단값과 자기 자신이 판정 기준(평균)을
+        // 오염시키지 못한다.
         let consensusCosine: Float = cos(20 * Float.pi / 180)
 
-        func gatedHit(at point: CGPoint) -> (position: simd_float3, normal: simd_float3)? {
-            guard let hit = groundHit(at: point) else { return nil }
-            let normal = simd_normalize(hit.normal)
-            guard simd_dot(normal, simd_float3(0, 1, 0)) >= maxTiltCosine else { return nil }
-            return (hit.position, normal)
-        }
-
         var hits: [(position: simd_float3, normal: simd_float3)] = []
-        let cellOffsets: [CGFloat] = [-s, 0, s]
-        for yOffset in cellOffsets {
-            for xOffset in cellOffsets {
-                if let hit = gatedHit(at: CGPoint(x: cx + xOffset, y: cy + yOffset)) {
-                    hits.append(hit)
+        if computeNormalsFromPositions {
+            // [좌표 기반] 법선을 ARKit per-hit 값에서 받지 않는다 — 그 값은 몇 cm
+            // 베이스라인의 미분이라 오차(5~10도)가 실제 그린 경사(1~3도)보다 크다. 대신
+            // 신뢰할 만한 히트 "위치" 16개(칸 꼭짓점 4x4 격자)를 읽고, 각 칸을 두 삼각형으로
+            // 쪼갠 최대 18개 삼각형의 외적으로 법선을 직접 계산한다 — 격자 한 칸(수십 cm)
+            // 베이스라인의 미분이라 오차가 1도 수준으로 떨어진다. 꼭짓점 일부가 가려져
+            // 빠지면 그 꼭짓점을 쓰는 삼각형만 건너뛰므로 가림에도 관대하다.
+            let cornerOffsets: [CGFloat] = [-1.5 * s, -0.5 * s, 0.5 * s, 1.5 * s]
+            let rawCorners: [[simd_float3?]] = cornerOffsets.map { yOffset in
+                cornerOffsets.map { xOffset in
+                    groundHit(at: CGPoint(x: cx + xOffset, y: cy + yOffset))?.position
+                }
+            }
+
+            // 좌표 규칙: 각 꼭짓점의 높이를 상하좌우 이웃 꼭짓점들의 평균 높이와 비교해
+            // 3cm 넘게 벗어나면 버린다(물건 위에 맞은 히트 등). 이웃 꼭짓점끼리는 수십 cm
+            // 거리라 정상 경사(3도)로는 2cm도 차이나지 않으므로 경사 때문에 억울하게
+            // 잘리진 않는다. 버려진 꼭짓점은 nil이 되어 관련 삼각형만 자연히 빠진다.
+            var corners = rawCorners
+            for row in 0..<4 {
+                for col in 0..<4 {
+                    guard let corner = rawCorners[row][col] else { continue }
+                    var neighborHeights: [Float] = []
+                    if row > 0, let neighbor = rawCorners[row - 1][col] { neighborHeights.append(neighbor.y) }
+                    if row < 3, let neighbor = rawCorners[row + 1][col] { neighborHeights.append(neighbor.y) }
+                    if col > 0, let neighbor = rawCorners[row][col - 1] { neighborHeights.append(neighbor.y) }
+                    if col < 3, let neighbor = rawCorners[row][col + 1] { neighborHeights.append(neighbor.y) }
+                    guard neighborHeights.count >= 2 else { continue }
+                    let meanHeight = neighborHeights.reduce(0, +) / Float(neighborHeights.count)
+                    if abs(corner.y - meanHeight) > 0.03 {
+                        corners[row][col] = nil
+                    }
+                }
+            }
+
+            func addTriangle(_ a: simd_float3?, _ b: simd_float3?, _ c: simd_float3?) {
+                guard let a, let b, let c else { return }
+                let cross = simd_cross(b - a, c - a)
+                let length = simd_length(cross)
+                guard length > 0.0001 else { return } // 퇴화 삼각형(세 점이 일직선)
+                var normal = cross / length
+                if normal.y < 0 { normal = -normal } // 꼭짓점 순서와 무관하게 항상 위쪽을 향하게
+                guard simd_dot(normal, simd_float3(0, 1, 0)) >= maxTiltCosine else { return }
+                hits.append(((a + b + c) / 3, normal))
+            }
+            for row in 0..<3 {
+                for col in 0..<3 {
+                    let topLeft = corners[row][col]
+                    let topRight = corners[row][col + 1]
+                    let bottomLeft = corners[row + 1][col]
+                    let bottomRight = corners[row + 1][col + 1]
+                    addTriangle(topLeft, topRight, bottomLeft)
+                    addTriangle(topRight, bottomRight, bottomLeft)
+                }
+            }
+        } else {
+            // [법선 수집] ARKit per-hit 법선을 그대로 수집하는 기존 방식 — 3x3 칸 중심
+            // 9지점. 좌표 기반 방식과 결과를 비교하기 위한 대조군으로 남겨둔다.
+            let cellOffsets: [CGFloat] = [-s, 0, s]
+            for yOffset in cellOffsets {
+                for xOffset in cellOffsets {
+                    guard let hit = groundHit(at: CGPoint(x: cx + xOffset, y: cy + yOffset)) else { continue }
+                    let normal = simd_normalize(hit.normal)
+                    guard simd_dot(normal, simd_float3(0, 1, 0)) >= maxTiltCosine else { continue }
+                    hits.append((hit.position, normal))
                 }
             }
         }
 
-        var bestGroup: [(position: simd_float3, normal: simd_float3)] = []
-        for candidate in hits {
-            let group = hits.filter { simd_dot($0.normal, candidate.normal) >= consensusCosine }
-            if group.count > bestGroup.count {
-                bestGroup = group
+        guard hits.count >= 3 else { return } // 히트가 부족하면 다음 프레임 재시도
+
+        var normalSum = simd_float3.zero
+        var mostTiltedIndex = 0   // y가 가장 작은 = 가장 기운 법선
+        var leastTiltedIndex = 0  // y가 가장 큰 = 가장 덜 기운 법선
+        for (index, hit) in hits.enumerated() {
+            normalSum += hit.normal
+            if hit.normal.y < hits[mostTiltedIndex].normal.y { mostTiltedIndex = index }
+            if hit.normal.y > hits[leastTiltedIndex].normal.y { leastTiltedIndex = index }
+        }
+        var trimmedSum = normalSum - hits[mostTiltedIndex].normal
+        if leastTiltedIndex != mostTiltedIndex {
+            trimmedSum -= hits[leastTiltedIndex].normal
+        }
+
+        var accepted: [(position: simd_float3, normal: simd_float3)] = []
+        for (index, hit) in hits.enumerated() {
+            var referenceSum = trimmedSum
+            // 극단값은 이미 기준에서 빠져 있으니, 그 외의 샘플만 자기 몫을 추가로 뺀다.
+            if index != mostTiltedIndex && index != leastTiltedIndex {
+                referenceSum -= hit.normal
+            }
+            let length = simd_length(referenceSum)
+            if length <= 0.0001 || simd_dot(hit.normal, referenceSum / length) >= consensusCosine {
+                accepted.append(hit)
             }
         }
 
-        // 합의 무리가 3개 미만이면 이번 수집 전체를 불신하고 건너뛴다 — 수집 중심을
+        // 통과가 3개 미만이면 이번 수집 전체를 불신하고 건너뛴다 — 수집 중심을
         // 등록하지 않으므로 다음 프레임에 같은 자리에서 자동으로 재추출을 시도한다.
-        guard bestGroup.count >= 3 else { return }
+        guard accepted.count >= 3 else { return }
         terrainSampleCollectionCenters.append(centerHit.position)
-        for sample in bestGroup {
+        for sample in accepted {
             terrainSamples.add(position: sample.position, normal: sample.normal)
         }
     }

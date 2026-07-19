@@ -42,47 +42,41 @@ final class TerrainSampleStore {
     /// 3x3 수집 패치의 실제 샘플 간격(terrainSampleMinSpacing=0.3m 수준)을 덮는 크기.
     private let neighborAveragingMargin: Float = 0.5
 
-    /// 이 각도 이내로 비슷한 법선은 "같은 법선"으로 묶는다 — 그린의 실제 기울기 변화와
-    /// 센서 노이즈는 몇 도 수준이고, 45도 게이트를 통과한 아웃라이어는 보통 이보다 크게
-    /// 어긋나므로 무리에 못 끼고 탈락한다.
-    private let modeAngleToleranceCosine: Float = cos(10 * Float.pi / 180)
-
-    /// 질의 지점 주변 이웃들의 최빈(mode) 법선을 반환한다 — nearestSurface 참고.
+    /// 질의 지점 주변 이웃들의 평균 법선을 반환한다 — nearestSurface 참고.
     func nearestNormal(to position: simd_float3) -> simd_float3? {
         nearestSurface(to: position)?.normal
     }
 
-    /// 최근접과 비슷한 거리(+neighborAveragingMargin 이내)의 이웃들을 모은 뒤, 법선이
-    /// 허용 각도(modeAngleToleranceCosine) 이내로 비슷한 것끼리 무리 지어 가장 빈도가
-    /// 높은 무리(최빈 클러스터)의 평균 법선과 평균 높이를 반환한다. 단순 평균은
-    /// 아웃라이어도 1/k만큼 결과를 끌어당기지만, 최빈 무리를 고르면 소수 아웃라이어는
-    /// 무리에 못 끼어 결과에 아예 영향을 못 준다. 동률이면 질의 지점에 더 가까운 샘플이
-    /// 이끄는 무리가 이긴다. 높이도 같은(이긴) 무리의 샘플들에서만 평균한다 —
-    /// 법선과 높이가 같은 지면 추정에서 나오도록(시뮬레이션 스텝마다 공의 y를 이 값으로
-    /// 스냅해 궤적이 실제 지면에서 떠오르거나 파묻히는 표류를 막는다).
+    /// 최근접과 비슷한 거리(+neighborAveragingMargin 이내)의 이웃 법선/높이를 평균해
+    /// 반환한다. 아웃라이어 제거(45도 게이트 + 20도 상호 합의)는 수집 시점에 이미
+    /// 끝났으므로 여기서는 단순 평균으로 충분하다 — 이 함수는 시뮬레이션 매 스텝 불리기
+    /// 때문에 할당 없는 선형 스캔이어야 한다(한때 여기서 최빈 클러스터링을 했더니 스텝마다
+    /// 정렬+O(k²)+배열 할당이 누적돼 솔버가 0.3초에서 15초로 느려졌다).
+    /// 높이도 같은 이웃들의 평균이다 — 법선과 높이가 같은 지면 추정에서 나오도록
+    /// (시뮬레이션 스텝마다 공의 y를 이 값으로 스냅해 궤적의 높이 표류를 막는다).
     func nearestSurface(to position: simd_float3) -> (normal: simd_float3, height: Float)? {
-        guard let nearest = nearestSample(to: position) else { return nil }
-        let radius = horizontalDistanceSquared(position, nearest.position).squareRoot() + neighborAveragingMargin
-        let radiusSquared = radius * radius
-        var neighbors = samples.filter { horizontalDistanceSquared(position, $0.position) <= radiusSquared }
-        neighbors.sort { horizontalDistanceSquared(position, $0.position) < horizontalDistanceSquared(position, $1.position) }
-
-        var bestGroup: [TerrainSample] = []
-        for center in neighbors {
-            let group = neighbors.filter { simd_dot($0.normal, center.normal) >= modeAngleToleranceCosine }
-            if group.count > bestGroup.count {
-                bestGroup = group
+        guard !samples.isEmpty else { return nil }
+        var nearestDistanceSquared = Float.greatestFiniteMagnitude
+        for sample in samples {
+            let distanceSquared = horizontalDistanceSquared(position, sample.position)
+            if distanceSquared < nearestDistanceSquared {
+                nearestDistanceSquared = distanceSquared
             }
         }
+        let radius = nearestDistanceSquared.squareRoot() + neighborAveragingMargin
+        let radiusSquared = radius * radius
 
         var sum = simd_float3.zero
         var heightSum: Float = 0
-        for sample in bestGroup {
+        var count = 0
+        for sample in samples where horizontalDistanceSquared(position, sample.position) <= radiusSquared {
             sum += sample.normal
             heightSum += sample.position.y
+            count += 1
         }
-        let height = heightSum / Float(bestGroup.count)
-        // 무리 안 법선들은 서로 10도 이내라 합이 0이 될 수 없다 — 정규화만 하면 단위벡터.
+        let height = heightSum / Float(count)
+        // 저장된 법선은 전부 45도 게이트를 통과한 단위벡터라 y성분이 모두 양수 —
+        // 합이 0이 될 수 없으므로 정규화만 하면 된다.
         return (simd_normalize(sum), height)
     }
 

@@ -77,7 +77,10 @@ struct ContentView: View {
             // 화면 맨 위/맨 아래 끝에 붙인다.
             VStack(alignment: .trailing, spacing: 8) {
                 VStack(spacing: 4) {
-                    if let aim = aimDescription, let distance = arViewModel.ballToHoleDistance, let adjusted = arViewModel.adjustedDistance {
+                    // 평지 환산은 솔버 속도 역산(adjustedDistance)이 아니라 볼·홀 높이차만
+                    // 쓰는 해석적 계산(slopeAdjustedDistance)을 쓴다 — 전자는 법선 편향으로
+                    // 솔버 속도가 부풀면 같이 부풀어(평지에서 2m 퍼트가 6m로 표시) 신뢰할 수 없다.
+                    if let aim = aimDescription, let distance = arViewModel.ballToHoleDistance, let adjusted = arViewModel.slopeAdjustedDistance {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("🎯 \(aim)")
                             Text("📏 실제 거리: \(distance, specifier: "%.2f")m")
@@ -329,6 +332,19 @@ struct SettingsSheetView: View {
                         Text("\(arViewModel.stimpReading, specifier: "%.2f") m")
                             .monospacedDigit()
                     }
+                }
+
+                Section("법선벡터") {
+                    Picker("수집 방식", selection: $arViewModel.computeNormalsFromPositions) {
+                        Text("좌표로 계산").tag(true)
+                        Text("법선 수집").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    Text(arViewModel.computeNormalsFromPositions
+                         ? "꼭짓점 좌표 16개에서 삼각형 외적으로 직접 계산 (정밀)"
+                         : "ARKit이 주는 히트 법선을 그대로 수집 (대조군)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
 
                 Section {
